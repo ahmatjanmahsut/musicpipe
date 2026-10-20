@@ -1,0 +1,79 @@
+# MusicPipe 路由器部署示例
+# 实际部署前请修改：卷路径、域名、证书路径、TZ。
+services:
+  musicpipe:
+    build: ./musicpipe
+    image: musicpipe:latest
+    container_name: musicpipe
+    restart: unless-stopped
+    ports:
+      - "7800:7800"
+    environment:
+      - MUSICPIPE_DATA=/data/config
+      - MUSICPIPE_LOCAL=/data/local
+      - MUSICPIPE_MUSIC=/music
+      - RCLONE_RC=http://rclone-mount:5572
+      - MUSICTAG_URL=http://music-tag-web:8002
+      - NAVIDROME_URL=http://navidrome:4533
+    volumes:
+      - ./config:/data/config
+      - /path/to/media:/data/local
+      - /path/to/media/view:/music:rslave
+    depends_on:
+      - rclone-mount
+
+  rclone-mount:
+    image: rclone/rclone:latest
+    container_name: rclone-mount
+    restart: unless-stopped
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse:/dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    command: >
+      mount <your-remote>: /music
+      --config /config/rclone/rclone.conf
+      --vfs-cache-mode full
+      --vfs-cache-max-size ${RCLONE_CACHE_SIZE:-8G}
+      --vfs-cache-max-age 72h
+      --dir-cache-time 3m
+      --vfs-refresh --buffer-size 16M
+      --vfs-read-ahead 64M
+      --cache-dir /cache
+      --allow-other --allow-non-empty
+      --umask 022
+      --rc --rc-addr 0.0.0.0:5572 --rc-no-auth
+      --log-level INFO
+    volumes:
+      - ./config/rclone:/config/rclone
+      - /path/to/media/rclone-vfs:/cache
+      - /path/to/media/view:/music:rshared
+
+  music-tag-web:
+    image: xhongc/music_tag_web:latest
+    container_name: music-tag-web
+    restart: unless-stopped
+    ports:
+      - "8003:8002"
+    volumes:
+      - /path/to/media/view:/app/media:rslave
+      - ./config/musictag:/app/data
+
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    restart: unless-stopped
+    ports:
+      - "4533:4533"
+    environment:
+      - ND_MUSICFOLDER=/music
+      - ND_DATAFOLDER=/data
+      - ND_SCANSCHEDULE=0 4 * * *
+      - ND_LOGLEVEL=info
+      - ND_ENABLESHARING=false
+    volumes:
+      - /path/to/media/view:/music:rslave
+      - ./config/navidrome:/data
