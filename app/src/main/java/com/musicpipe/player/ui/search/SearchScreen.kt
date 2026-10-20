@@ -42,6 +42,7 @@ import com.musicpipe.player.ui.components.ErrorBanner
 import com.musicpipe.player.ui.components.LoadingBlock
 import com.musicpipe.player.ui.components.SongListItem
 import com.musicpipe.player.ui.theme.DsoColors
+import com.musicpipe.player.ui.theme.DsoShapes
 
 /** Search page (docs/01 §4 search3.view): rounded #F5F5F5 input, DsoMusic style. */
 @Composable
@@ -73,7 +74,7 @@ fun SearchScreen(onBack: () -> Unit) {
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { vm.search(state.query) }),
-                shape = RoundedCornerShape(20.dp),
+                shape = DsoShapes.Pill,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -83,7 +84,13 @@ fun SearchScreen(onBack: () -> Unit) {
             state.searched && state.results.isEmpty() -> EmptyBlock("没有找到相关歌曲")
             !state.searched -> EmptyBlock("输入关键词开始搜索")
             else -> LazyColumn(Modifier.fillMaxSize()) {
-                itemsIndexed(state.results, key = { i, s -> "${s.id}-$i" }) { index, song ->
+                itemsIndexed(
+                    state.results,
+                    key = { i, s -> "${s.id}-$i" },
+                    // v1.10.0（P10）：声明 contentType，让 Lazy 只复用同类槽位；
+                    // 缺省时所有条目同类型，滚动中 reuse 更频繁、组合开销更大。
+                    contentType = { _, _ -> "song" }
+                ) { index, song ->
                     SongListItem(
                         song = song,
                         isCurrentPlaying = currentSongId == song.id,

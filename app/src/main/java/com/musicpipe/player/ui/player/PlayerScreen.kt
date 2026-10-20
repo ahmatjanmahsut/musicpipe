@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
@@ -44,10 +43,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import coil.compose.AsyncImage
 import com.musicpipe.player.di.LocalAppContainer
+import com.musicpipe.player.ui.theme.DsoShapes
+import com.musicpipe.player.ui.theme.LocalDsoPalette
 import com.musicpipe.player.ui.theme.DsoColors
 import com.musicpipe.player.util.TimeFormat
 import kotlinx.coroutines.flow.flowOf
@@ -60,13 +63,23 @@ import kotlinx.coroutines.launch
 @Composable
 fun PlayerScreen(onBack: () -> Unit, onOpenLyrics: () -> Unit) {
     val container = LocalAppContainer.current
-    val playerState by container.playerRepository.state.collectAsStateWithLifecycle()
-    val song = playerState.currentSong
+    // v1.10.0（P2）：这里只订阅**低频变化**的字段（当前曲目 / 播放中 / 时长）。
+    // 之前直接 collect 整个 PlaybackState，而控制器每 500ms 刷新一次 positionMs，
+    // 于是整页（含封面 AsyncImage、收藏查询、控件树）每秒重组两次。
+    // 高频的 positionMs 交给下方 SeekBar 自己订阅（它只重绘画进度条）。
+    val header by remember {
+        container.playerRepository.state
+            .map { TrackHeader(it.currentSong, it.isPlaying, it.durationMs) }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = TrackHeader(null, false, 0L))
+    val song = header.song
     val scope = rememberCoroutineScope()
 
-    val isFav by (song?.let { s ->
-        container.favoriteRepository.observeIsFavorite(s.id)
-    } ?: flowOf(false)).collectAsStateWithLifecycle(initialValue = false)
+    // 同 P2：flow 必须 remember(song.id)，否则每次重组都新建一条 Room 查询流。
+    val favoriteFlow = remember(song?.id) {
+        song?.let { s -> container.favoriteRepository.observeIsFavorite(s.id) } ?: flowOf(false)
+    }
+    val isFav by favoriteFlow.collectAsStateWithLifecycle(initialValue = false)
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
@@ -103,10 +116,10 @@ fun PlayerScreen(onBack: () -> Unit, onOpenLyrics: () -> Unit) {
         Spacer(Modifier.height(24.dp))
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Box(
-                Modifier.size(290.dp).clip(CircleShape).background(DsoColors.CdPlateBg),
+                Modifier.size(290.dp).clip(CircleShape).background(LocalDsoPalette.current.cdPlate),
                 contentAlignment = Alignment.Center
             ) {
-                Box(Modifier.size(250.dp).clip(CircleShape).background(DsoColors.CoverPlaceholder)) {
+                Box(Modifier.size(250.dp).clip(CircleShape).background(LocalDsoPalette.current.coverPlaceholder)) {
                     if (song?.coverUrl != null) {
                         AsyncImage(
                             model = song.coverUrl, contentDescription = song.title,
@@ -123,30 +136,7 @@ fun PlayerScreen(onBack: () -> Unit, onOpenLyrics: () -> Unit) {
 
         Spacer(Modifier.weight(1f))
 
-        var seeking by remember { mutableStateOf(false) }
-        var seekPos by remember { mutableFloatStateOf(0f) }
-        val duration = playerState.durationMs.coerceAtLeast(1L)
-        val pos = if (seeking) seekPos.toLong() else playerState.positionMs
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
-            Slider(
-                value = (pos.toFloat() / duration.toFloat()).coerceIn(0f, 1f),
-                onValueChange = { seeking = true; seekPos = it * duration.toFloat() },
-                onValueChangeFinished = {
-                    container.playerRepository.seekTo(seekPos.toLong())
-                    seeking = false
-                },
-                colors = SliderDefaults.colors(
-                    thumbColor = DsoColors.AppRed,
-                    activeTrackColor = DsoColors.AppRed,
-                    inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
-                )
-            )
-            Row(Modifier.fillMaxWidth()) {
-                Text(TimeFormat.format(pos), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.weight(1f))
-                Text(TimeFormat.format(playerState.durationMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+        SeekBar(durationMs = header.durationMs)
 
         Spacer(Modifier.height(12.dp))
         Row(
@@ -162,9 +152,9 @@ fun PlayerScreen(onBack: () -> Unit, onOpenLyrics: () -> Unit) {
             ) {
                 IconButton(onClick = { container.playerRepository.togglePlayPause() }) {
                     Icon(
-                        if (playerState.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        if (playerState.isPlaying) "暂停" else "播放",
-                        tint = DsoColors.PageWhite, modifier = Modifier.size(40.dp)
+                        if (header.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        if (header.isPlaying) "暂停" else "播放",
+                        tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(40.dp)
                     )
                 }
             }
@@ -175,14 +165,68 @@ fun PlayerScreen(onBack: () -> Unit, onOpenLyrics: () -> Unit) {
 
         Box(Modifier.fillMaxWidth().padding(bottom = 28.dp), contentAlignment = Alignment.Center) {
             Row(
-                Modifier.clip(RoundedCornerShape(20.dp))
+                Modifier.clip(DsoShapes.Pill)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable(onClick = onOpenLyrics)
                     .padding(horizontal = 24.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("查看歌词", color = DsoColors.HighlightBlue, fontSize = 14.sp)
+                Text("查看歌词", color = DsoColors.HighlightBlue, style = MaterialTheme.typography.bodyMedium)
             }
+        }
+    }
+}
+
+/**
+ * v1.10.0（P2）：播放页"低频头部状态"。
+ *
+ * 只装当前曲目、是否在播、总时长 —— 这三项变化频率很低（切歌/暂停/新时长），
+ * 用 distinctUntilChanged 后整页不会再被 500ms 的进度刷新带着重组。
+ */
+private data class TrackHeader(
+    val song: com.musicpipe.player.data.model.Song?,
+    val isPlaying: Boolean,
+    val durationMs: Long
+)
+
+/**
+ * v1.10.0（P2）：进度条独立订阅 positionMs。
+ *
+ * 拖拽期间用本地 [seekPos] 覆盖（否则手指还没松开就被上游位置拉回），
+ * 松手调用 seekTo 后清空覆盖。整页重组频率因此从 2Hz 降到"仅拖拽时"。
+ */
+@Composable
+private fun SeekBar(durationMs: Long) {
+    val container = LocalAppContainer.current
+    val positionMs by remember {
+        container.playerRepository.state
+            .map { it.positionMs }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = 0L)
+
+    var seeking by remember { mutableStateOf(false) }
+    var seekPos by remember { mutableFloatStateOf(0f) }
+    val duration = durationMs.coerceAtLeast(1L)
+    val pos = if (seeking) seekPos.toLong() else positionMs
+
+    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+        Slider(
+            value = (pos.toFloat() / duration.toFloat()).coerceIn(0f, 1f),
+            onValueChange = { seeking = true; seekPos = it * duration.toFloat() },
+            onValueChangeFinished = {
+                container.playerRepository.seekTo(seekPos.toLong())
+                seeking = false
+            },
+            colors = SliderDefaults.colors(
+                thumbColor = DsoColors.AppRed,
+                activeTrackColor = DsoColors.AppRed,
+                inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
+            )
+        )
+        Row(Modifier.fillMaxWidth()) {
+            Text(TimeFormat.format(pos), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.weight(1f))
+            Text(TimeFormat.format(durationMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

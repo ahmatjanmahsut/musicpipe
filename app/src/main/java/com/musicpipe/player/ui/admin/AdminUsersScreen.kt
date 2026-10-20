@@ -47,6 +47,7 @@ import com.musicpipe.player.di.LocalAppContainer
 import com.musicpipe.player.ui.components.ErrorBanner
 import com.musicpipe.player.ui.components.LoadingBlock
 import com.musicpipe.player.ui.theme.DsoColors
+import com.musicpipe.player.ui.theme.DsoShapes
 import com.musicpipe.player.util.TimeFormat
 
 /**
@@ -180,7 +181,7 @@ private fun UserRow(user: UserRowDto, onEdit: () -> Unit, onDelete: () -> Unit) 
                         style = MaterialTheme.typography.labelSmall,
                         color = if (user.role == "admin") DsoColors.AppRed else DsoColors.HighlightBlue,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
+                            .clip(DsoShapes.Badge)
                             .background(
                                 (if (user.role == "admin") DsoColors.AppRed else DsoColors.HighlightBlue).copy(alpha = 0.1f)
                             )

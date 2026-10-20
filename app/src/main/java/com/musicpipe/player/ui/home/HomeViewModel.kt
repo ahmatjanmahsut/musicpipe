@@ -57,9 +57,20 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         /** 歌单操作进行中（合并/删除）。 */
         val playlistBusy: Boolean = false
     ) {
+        /**
+         * v1.10.0（P6）：openFolderId -> 文件夹 的索引表。
+         *
+         * 旧实现是 getter 里 folders.find{...}，O(n) 线性扫描；而 HomeScreen 在组合期
+         * 一共读 openFolder 9 次（面板、顶栏、可见性判断、播放全部…），每次重组都扫 9 遍。
+         * 这里改成一次性建 map（construction 时付一次代价），读取退化为 O(1)。
+         */
+        private val folderById: Map<String, HomeFolder> by lazy {
+            folders.associate { it.folder.id to it.folder }
+        }
+
         /** 当前打开的文件夹（openFolderId 解析后的数据）。 */
         val openFolder: HomeFolder?
-            get() = openFolderId?.let { id -> folders.find { it.folder.id == id }?.folder }
+            get() = openFolderId?.let { folderById[it] }
 
         /** 当前二级页面可见的歌曲（文件夹内 = 该文件夹曲目；总览 = 全曲库）。 */
         val visibleSongs: List<Song>
@@ -68,11 +79,15 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         /**
          * 可作为合并/删除目标的分享歌单。
          *
+         * v1.10.0（P7）：从 getter 改成 lazy 缓存。getter 每次读取都 map 出一个新 List，
+         * 而 HomeScreen 原来在组合期反复读（且 memo 的 key 用的是 folders，键值不一致，
+         * 切换轴时不重建）。改成 lazy 后同一 UiState 实例永远返回同一个 List 引用，
+         * Compose 的 === 比较才能命中跳过。
+         *
          * 注意读的是 [playlistFolders] 而不是 [folders]：切到专辑轴时 [folders] 里没有歌单，
          * 但管理条、合并对话框、角标数量仍需要完整的歌单列表。
          */
-        val shareFolders: List<HomeFolder>
-            get() = playlistFolders.map { it.folder }
+        val shareFolders: List<HomeFolder> by lazy { playlistFolders.map { it.folder } }
     }
 
     private val _state = MutableStateFlow(UiState())

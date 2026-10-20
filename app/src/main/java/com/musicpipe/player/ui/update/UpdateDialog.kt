@@ -176,5 +176,3 @@ fun UpdateDialog(onDismiss: () -> Unit) {
         }
     )
 }
-
-private fun mutableStateOf(value: Boolean) = androidx.compose.runtime.mutableStateOf(value)

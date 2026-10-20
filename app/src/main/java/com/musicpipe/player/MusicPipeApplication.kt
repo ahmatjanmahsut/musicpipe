@@ -50,9 +50,16 @@ class MusicPipeApplication : Application(), ImageLoaderFactory {
         if (android.os.Looper.getMainLooper().thread === Thread.currentThread()) return true
         return when (error) {
             is OutOfMemoryError, is StackOverflowError, is AssertionError -> true
+            // v1.10.0（C2）：只吞"确实属于网络 IO 失败"的类型。
+            //
+            // 原来把 IOException 放在最后统一判 false，等于把 FileNotFoundException、
+            // EOFException、JSON 解析失败这类**逻辑错误**也一起吞了：
+            // 线程死掉、日志只有一行 W，App 看着还活着但那个功能永远不再工作，
+            // 用户只会说"下载不动了"，排查时几乎无法定位。
+            // 现在只有 socket 级/超时/SSL/中断这几类按可恢复处理；
+            // 其它 IOException（尤其是文件与解析）一律当致命，交给系统留崩溃记录。
             is java.net.SocketException, is java.net.SocketTimeoutException,
-            is java.io.InterruptedIOException, is javax.net.ssl.SSLException,
-            is java.io.IOException -> false
+            is java.io.InterruptedIOException, is javax.net.ssl.SSLException -> false
             else -> true
         }
     }

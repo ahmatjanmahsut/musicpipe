@@ -79,18 +79,20 @@ class PlaylistManageTest {
     @Test
     fun selectedIdsSurviveAfterDeletion() {
         // 删除后剩下的选择集只应保留仍然存在的歌单，避免 UI 底栏显示"已选 2"但其实只剩 1 个。
-        val remaining = shares("a", "c").map { it.id }.toSet()
-        val kept = PlaylistManageRules.pruneSelection(setOf("share:a", "share:b", "share:c"), remaining)
-        assertEquals(setOf("share:a", "share:c"), kept)
+        // v1.10.0：选择集与存活集都按裸 shareId 传（与 UI 的键约定一致）。
+        val alive = shares("a", "c").mapNotNull { it.shareId }.toSet()
+        val kept = PlaylistManageRules.pruneSelection(setOf("a", "b", "c"), alive)
+        assertEquals(setOf("a", "c"), kept)
     }
 
     @Test
     fun selectionIsIgnoredForNonShareFolders() {
         // 管理态下若因为数据刷新混入了专辑卡片，点击不应把它加入合并集合。
+        // 专辑/未分类没有 shareId，它们既不会被选中、也不该出现在存活集里。
         val kept = PlaylistManageRules.pruneSelection(
-            setOf("share:a", "album:x"),
-            setOf("share:a", "album:x")
+            setOf("a", "album:x"),
+            setOf("a")
         )
-        assertEquals(setOf("share:a"), kept)
+        assertEquals(setOf("a"), kept)
     }
 }

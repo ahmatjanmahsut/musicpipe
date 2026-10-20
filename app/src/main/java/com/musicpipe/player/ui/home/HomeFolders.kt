@@ -172,10 +172,6 @@ fun buildFolderGrid(axis: HomeAxis, collections: List<HomeCollection>, library: 
     }
 }
 
-/** 兼容旧签名：等价于歌单轴（v1.9.0 之前的默认行为已改成两轴分离）。 */
-fun buildFolderGrid(collections: List<HomeCollection>, library: List<Song>): List<HomeFolderGrid> =
-    buildFolderGrid(HomeAxis.PLAYLISTS, collections, library)
-
 /** 副标题：N 首，分享文件夹额外说明未入库数量。纯函数，便于单测。 */
 fun buildFolderSubtitleText(folder: HomeFolder): String {
     val base = folder.songs.size.toString() + " 首"
@@ -200,24 +196,6 @@ data class HomeFolderGrid(
     val kind: HomeFolder.Kind get() = folder.kind
 }
 
-/**
- * v1.6.0 网格入口封装。
- * 单独成 object 而不挂进 HomeFolders：HomeFolders 是「曲库 → 文件夹」的原始分组规则，
- * 网格只是它的使用方（预先算好副标题与封面拼图，好让组合期零计算）。
- */
-object HomeFoldersSub {
-    fun grid(axis: HomeAxis, collections: List<HomeCollection>, library: List<Song>): List<HomeFolderGrid> =
-        buildFolderGrid(axis, collections, library)
-
-    /**
-     * 旧签名兼容（v1.6.0~v1.8.0 的调用方/测试）：等价于「歌单轴」。
-     * 首页已改成显式传轴，这里只为不破坏既有断言而保留。
-     */
-    fun grid(collections: List<HomeCollection>, library: List<Song>): List<HomeFolderGrid> =
-        grid(HomeAxis.PLAYLISTS, collections, library)
-
-    fun subtitle(folder: HomeFolder): String = buildFolderSubtitleText(folder)
-}
 /**
  * v1.6.0 需求3（主页页面管理）的纯规则：哪些歌单能删、能不能合并、合并方向。
  *
@@ -270,7 +248,14 @@ object PlaylistManageRules {
     /**
      * 数据刷新后收敛选择集：只保留仍然存在、且仍然是可管理分享歌单的 id。
      * 否则删完歌单底栏还显示"已选 2"，用户会以为有幽灵选择。
+     *
+     * v1.10.0（D1）：**修正语义**。旧实现除了过滤存活 id，还要求 startsWith("share:")
+     * —— 那是 v1.7.0 之前的旧键约定（集合装 folderId）。现在集合装的是裸 sharelinks.id，
+     * 这个前缀判断会让函数**永远返回空集**：一旦有人把它接到真实流程上，
+     * 用户的选择会被静默清空且毫无提示。
+     * 管理态那套逻辑（HomeViewModel.prunePlaylistSelection）已经是正确实现，
+     * 这里同步成同一语义，避免两份"同名不同义"的代码继续漂移。
      */
-    fun pruneSelection(selected: Set<String>, remainingIds: Set<String>): Set<String> =
-        selected.filter { it in remainingIds && it.startsWith("share:") }.toSet()
+    fun pruneSelection(selected: Set<String>, aliveShareIds: Set<String>): Set<String> =
+        selected.filter { it in aliveShareIds }.toSet()
 }

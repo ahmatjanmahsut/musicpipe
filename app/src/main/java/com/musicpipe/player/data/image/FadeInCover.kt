@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,7 +18,7 @@ import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.CachePolicy
 import coil.request.ImageRequest
-import com.musicpipe.player.ui.theme.DsoColors
+import com.musicpipe.player.ui.theme.LocalDsoPalette
 
 /**
  * v1.6.0：封面加载器，专为**滚动列表/网格**设计。
@@ -48,11 +49,16 @@ fun FadeInCover(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop
 ) {
-    val placeholder = modifier.background(DsoColors.CoverPlaceholder)
+    val palette = LocalDsoPalette.current
+    val placeholder = modifier.background(palette.coverPlaceholder)
     if (model.isNullOrBlank()) {
         // 无封面占位也遵循调用方布局（拼图单元格 / 整卡），不再自造正方形。
         Box(placeholder, contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = DsoColors.TextWeak)
+            Icon(
+                Icons.Filled.MusicNote,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         return
     }
@@ -70,7 +76,11 @@ fun FadeInCover(
     val loaded = painter.state is AsyncImagePainter.State.Success
     Box(placeholder, contentAlignment = Alignment.Center) {
         if (!loaded) {
-            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = DsoColors.TextWeak)
+            Icon(
+                Icons.Filled.MusicNote,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         Image(
             painter = painter,

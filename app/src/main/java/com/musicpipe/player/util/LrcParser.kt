@@ -39,6 +39,22 @@ object LrcParser {
         return lines.sortedBy { it.timeMs }
     }
 
+    /**
+     * 单行是否处于高亮态（v1.10.0）。
+     *
+     * 歌词页每行各自用 derivedStateOf 调它来判断"我是不是当前行"，
+     * 这样播放位置推进时只有跨越边界的两行会重组，而不是整屏可见行。
+     * 判定与 [activeIndex] 严格等价：该行已开始、且下一行尚未开始（或已是最后一行）。
+     * 传入 lines 是为了拿到下一行的起始时间。
+     */
+    fun isActive(lines: List<LyricLine>, index: Int, positionMs: Long): Boolean {
+        if (index < 0 || index >= lines.size) return false
+        val start = lines[index].timeMs
+        if (positionMs < start) return false
+        val next = if (index + 1 < lines.size) lines[index + 1].timeMs else Long.MAX_VALUE
+        return positionMs < next
+    }
+
     /** Index of the active line at positionMs, or -1 (before first line / empty). */
     fun activeIndex(lines: List<LyricLine>, positionMs: Long): Int {
         if (lines.isEmpty()) return -1

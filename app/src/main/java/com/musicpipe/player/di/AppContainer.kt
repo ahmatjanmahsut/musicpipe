@@ -24,7 +24,20 @@ import kotlinx.coroutines.launch
 /** Manual DI container — created once by MusicPipeApplication. */
 class AppContainer(private val context: Context) {
 
-    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /**
+     * 全局后台作用域（v1.10.0 / P9）。
+     *
+     * 原来这里是 Dispatchers.Main.immediate：所有 prefs 收集、token 同步、曲库加载
+     * 都跑在主线程上，一旦有一个稍重的操作（DataStore 首次读盘、Room 查询）就会抢主线程。
+     * 现在改成 Default，数据类工作真正离开主线程。
+     *
+     * **播放控制不能跟着走**：MediaController / MediaSessionService 必须在主线程访问
+     * （方法调用、回调、currentPosition 都要求与创建时同一 looper），所以另开 [playerScope]。
+     */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** 播放器专用主线程作用域：MediaController 的硬性要求，不要改成 Default。 */
+    val playerScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val prefs = PrefsRepository(context)
     private val db = AppDatabase.get(context)
@@ -44,7 +57,7 @@ class AppContainer(private val context: Context) {
     /** v1.7.0：封面/歌词预热器（曲库加载后由 HomeViewModel 触发）。 */
     val prewarmer = com.musicpipe.player.data.image.Prewarmer(context, lyricsRepository)
 
-    val playerController = MusicPlayerController(context, appScope)
+    val playerController = MusicPlayerController(context, playerScope)
     val playerRepository = PlayerRepository(playerController, historyRepository, appScope)
 
     /**
@@ -52,7 +65,8 @@ class AppContainer(private val context: Context) {
      * 重复调用安全：connect() 内部有 isConnected 短路。
      */
     fun startPlaybackEngine() {
-        appScope.launch { runCatching { playerController.connect() } }
+        // 绑定必须在主线程发起（MediaController.Builder），故走 playerScope。
+        playerScope.launch { runCatching { playerController.connect() } }
     }
 
     init {
@@ -70,6 +84,12 @@ class AppContainer(private val context: Context) {
         // v1.7.0：切歌即把这一首的歌词读进内存（通常命中 SQLite 缓存，1~3ms）。
         // 于是用户切歌后立刻打开歌词页不再需要任何等待；未命中时这里只是一次后台请求，
         // 与 LyricsScreen 自己的加载并发，不会拖慢播放。
+        // v1.10.0（C1）：登出（含 401 自动登出）后清掉本地曲库快照与歌词缓存，
+        // 避免下一个会话首屏画的是上一个会话的数据。
+        authRepository.onLogoutCleanup = {
+            runCatching { songRepository.clearSnapshot() }
+            runCatching { lyricsRepository.clear() }
+        }
         playerRepository.onSongChangedHook = { song ->
             appScope.launch { runCatching { lyricsRepository.prewarm(listOf(song.id)) } }
         }

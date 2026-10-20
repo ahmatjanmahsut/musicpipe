@@ -84,7 +84,11 @@ fun HistoryScreen() {
             EmptyBlock("暂无播放记录")
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
-                items(tracks, key = { it.id }) { track ->
+                items(
+                    tracks,
+                    key = { it.id },
+                    contentType = { "track" } // v1.10.0（P10）
+                ) { track ->
                     SongListItem(
                         song = container.historyRepository.toSong(track),
                         isCurrentPlaying = currentSongId == track.songId,

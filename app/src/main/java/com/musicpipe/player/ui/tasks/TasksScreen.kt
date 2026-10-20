@@ -29,6 +29,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,7 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musicpipe.player.data.remote.dto.TaskDto
@@ -45,8 +46,10 @@ import com.musicpipe.player.ui.components.EmptyBlock
 import com.musicpipe.player.ui.components.ErrorBanner
 import com.musicpipe.player.ui.components.LoadingBlock
 import com.musicpipe.player.ui.theme.DsoColors
+import com.musicpipe.player.ui.theme.DsoShapes
 import com.musicpipe.player.util.GatewayUtil
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** 下载任务: live view of the router download queue with cancel / clear actions. */
 @Composable
@@ -62,12 +65,21 @@ fun TasksScreen(onBack: () -> Unit) {
             vm.consumeToast()
         }
     }
-    // Poll while the screen is composed; leaves automatically on navigation.
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(3000)
-            vm.refresh()
+    // v1.10.0（P3）：轮询改成**生命周期感知**。
+    // 原来用 LaunchedEffect(Unit) + while(true)：只在离开导航图时才停，
+    // 按 Home 键回到桌面、或切到其它 App 期间仍在每 3 秒发一次 HTTP 请求
+    // （后台流量 + 唤醒 CPU + 服务端日志噪音），回到前台还继续累积。
+    // 现在用 LifecycleResumeEffect：只在 RESUMED 期间轮询，一进 STOPPED 立刻取消。
+    val pollScope = rememberCoroutineScope()
+    LifecycleResumeEffect(Unit) {
+        // LifecycleResumeEffect 的 block 不是 suspend 作用域，要显式拿一个与组合绑定的 scope。
+        val job = pollScope.launch {
+            while (true) {
+                delay(3000)
+                vm.refresh()
+            }
         }
+        onPauseOrDispose { job.cancel() }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -196,11 +208,11 @@ private fun StatusChip(status: String?) {
         status == "failed" -> DsoColors.AppRed
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Surface(shape = RoundedCornerShape(10.dp), color = fg.copy(alpha = 0.12f)) {
+    Surface(shape = DsoShapes.Surface, color = fg.copy(alpha = 0.12f)) {
         Text(
             GatewayUtil.statusLabel(status),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelSmall,
             color = fg
         )
     }

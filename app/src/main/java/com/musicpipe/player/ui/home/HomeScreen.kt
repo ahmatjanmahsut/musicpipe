@@ -30,7 +30,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -69,7 +69,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -80,6 +79,8 @@ import com.musicpipe.player.ui.components.ErrorBanner
 import com.musicpipe.player.ui.components.LoadingBlock
 import com.musicpipe.player.ui.components.SongListItem
 import com.musicpipe.player.ui.theme.DsoColors
+import com.musicpipe.player.ui.theme.DsoShapes
+import com.musicpipe.player.ui.theme.DsoTextStyles
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
@@ -162,7 +163,10 @@ fun HomeScreen(
     // 它在下面被读了三次（操作条 / 合并对话框 / 顶部栏可见性），等于每次重组都新建 3 个 List，
     // 并且任何以它为参数的子组合都无法跳过。这里按 folders 缓存一次，folders 是值类型且
     // 只在 refresh 成功后变化，所以缓存键的相等比较代价极低。
-    val shareFolders = remember(state.folders) { state.shareFolders }
+    // v1.10.0（P7）：不再需要 remember 包一层 —— UiState.shareFolders 现在是 lazy，
+    // 同一份 state 永远返回同一个 List 引用，直接读即可（原来 remember 的 key 用的是
+    // state.folders，而取值的字段来自 playlistFolders，键值不一致，切轴时不会重建）。
+    val shareFolders = state.shareFolders
 
     if (confirmDelete) {
         AlertDialog(
@@ -374,7 +378,8 @@ private fun TopBar(
             if (folderMode && songCount != null) {
                 Text(
                     songCount.toString() + " 首",
-                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -401,7 +406,7 @@ private fun TopBar(
         Text(
             "搜索",
             color = DsoColors.AppRed,
-            fontSize = 15.sp,
+            style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier
                 .clickable(onClick = onOpenSearch)
                 .padding(horizontal = 6.dp, vertical = 4.dp)
@@ -410,7 +415,7 @@ private fun TopBar(
             Text(
                 if (manageMode) "完成" else "管理",
                 color = DsoColors.AppRed,
-                fontSize = 15.sp,
+                style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier
                     .clickable(onClick = onToggleManage)
                     .padding(start = 6.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)
@@ -436,7 +441,7 @@ private fun AxisTabs(
     albumCount: Int,
     onSelect: (HomeAxis) -> Unit
 ) {
-    val pillShape = remember { RoundedCornerShape(50) }
+    val pillShape = CircleShape
     Row(
         Modifier
             .fillMaxWidth()
@@ -463,7 +468,7 @@ private fun AxisTabs(
             ) {
                 Text(
                     text = item.label + " " + count,
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.labelMedium,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                     color = when {
                         selected -> Color.White
@@ -501,22 +506,26 @@ private fun FolderGrid(
     //    因此这里不需要额外的 prefetch/固定高度技巧 —— 真正的瓶颈在封面解码与组合期计算，
     //    两处都已修（见文件头 A/B 与 FadeInCover 的说明）。
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        // v1.10.0（V7）：原来是全项目唯一一处写死的 GridCells.Fixed(2)。
+        // 手机竖屏下 Adaptive(150.dp) 仍恰好排 2 列（与原来一致），
+        // 但横屏、折叠屏展开、平板会自动变成 3~4 列，不必再单独写一套布局。
+        // 跨列条目改用 maxLineSpan（见下），否则新列数下横幅只会占 2 格、右边露白。
+        columns = GridCells.Adaptive(minSize = 150.dp),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxSize()
     ) {
         if (error != null) {
-            item(span = { GridItemSpan(2) }, key = "error_banner", contentType = "error") {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "error_banner", contentType = "error") {
                 ErrorBanner("加载失败：" + error + "，下拉重试")
             }
         }
         if (folders.isEmpty()) {
-            item(span = { GridItemSpan(2) }, key = "empty", contentType = "empty") {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "empty", contentType = "empty") {
                 Text(
                     emptyText,
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 12.dp)
                 )
@@ -583,8 +592,9 @@ private fun FolderCard(
     val interaction = remember { MutableInteractionSource() }
     // v1.6.0：形状/颜色/图标在组合期是全新对象，每次 recomposition 都重建会让
     // 卡片永远无法跳过 —— 滚动时每张重生的卡片都在分配。用 remember 共享常量。
-    val cardShape = remember { RoundedCornerShape(10.dp) }
-    val badgeShape = remember { RoundedCornerShape(6.dp) }
+    // v1.10.0（V5）：形状改用单例常量（等价但不再依赖 remember）。
+    val cardShape = DsoShapes.Surface
+    val badgeShape = DsoShapes.SmallSurface
     val translucentBlack = remember { Color.Black.copy(alpha = 0.35f) }
     val badgeRed = remember { DsoColors.AppRed.copy(alpha = 0.85f) }
     Column(
@@ -660,17 +670,17 @@ private fun FolderCard(
                     modifier = Modifier.size(11.dp)
                 )
                 Spacer(Modifier.width(3.dp))
-                Text(folderKindLabel(folder.kind), fontSize = 9.sp, color = androidx.compose.ui.graphics.Color.White)
+                Text(folderKindLabel(folder.kind), style = DsoTextStyles.Badge, color = androidx.compose.ui.graphics.Color.White)
             }
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            folder.title, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            folder.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1, overflow = TextOverflow.Ellipsis
         )
         Text(
-            item.subtitle, fontSize = 11.sp,
+            item.subtitle, style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis
         )
@@ -751,7 +761,7 @@ private fun FolderDetail(
             ) {
                 Text(
                     buildFolderSubtitleText(folder), Modifier.weight(1f),
-                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 TextButton(onClick = onPlayAll) {
                     Icon(
@@ -759,7 +769,7 @@ private fun FolderDetail(
                         tint = DsoColors.AppRed, modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(2.dp))
-                    Text("播放全部", color = DsoColors.AppRed, fontSize = 13.sp)
+                    Text("播放全部", color = DsoColors.AppRed, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -849,13 +859,13 @@ private fun PlaylistManageBar(
             if (selected.isEmpty()) "长按或点击卡片选择歌单"
             else "已选 " + selected.size + " / " + total,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
+            style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(start = 8.dp)
         )
         Spacer(Modifier.weight(1f))
         if (selected.size == 1) {
             TextButton(onClick = { onDeleteOne(selected.first()) }, enabled = !busy) {
-                Text("删除", color = DsoColors.AppRed, fontSize = 13.sp)
+                Text("删除", color = DsoColors.AppRed, style = MaterialTheme.typography.bodySmall)
             }
         }
         TextButton(onClick = onDeleteSelected, enabled = selected.isNotEmpty() && !busy) {
@@ -863,7 +873,7 @@ private fun PlaylistManageBar(
                 if (busy) "处理中…" else "删除(" + selected.size + ")",
                 color = if (selected.isNotEmpty() && !busy) DsoColors.AppRed
                 else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp
+                style = MaterialTheme.typography.bodySmall
             )
         }
         TextButton(onClick = onMerge, enabled = selected.size >= 2 && !busy) {
@@ -871,7 +881,7 @@ private fun PlaylistManageBar(
                 "合并",
                 color = if (selected.size >= 2 && !busy) DsoColors.AppRed
                 else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp
+                style = MaterialTheme.typography.bodySmall
             )
         }
     }
@@ -904,11 +914,11 @@ private fun MergeDialog(
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "把选中的歌单并入目标歌单，合并后来源歌单会被删除，曲库里的歌曲不受影响。",
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
-                Text("目标歌单", fontSize = 12.sp, color = DsoColors.AppRed, fontWeight = FontWeight.Medium)
+                Text("目标歌单", style = MaterialTheme.typography.labelMedium, color = DsoColors.AppRed, fontWeight = FontWeight.Medium)
                 folders.filter { it.shareId != null }.forEach { f ->
                     Row(
                         Modifier
@@ -924,7 +934,7 @@ private fun MergeDialog(
                         )
                         Text(
                             f.title + "（" + f.songs.size + " 首）",
-                            fontSize = 13.sp,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -936,7 +946,7 @@ private fun MergeDialog(
                     if (chosen.isEmpty()) "未选择要并入的来源（返回后勾选 ≥2 个歌单）"
                     else "将并入 " + chosen.size + " 个歌单：" + folders.filter { it.shareId in chosen }
                         .joinToString("、") { it.title },
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

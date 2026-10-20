@@ -68,7 +68,11 @@ fun FavoriteScreen() {
             EmptyBlock("还没有收藏歌曲\n在播放页点击 ♥ 即可收藏到本地")
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
-                itemsIndexed(favorites, key = { _, t -> t.songId }) { index, track ->
+                itemsIndexed(
+                    favorites,
+                    key = { _, t -> t.songId },
+                    contentType = { _, _ -> "favorite" } // v1.10.0（P10）
+                ) { index, track ->
                     SongListItem(
                         song = container.favoriteRepository.toSong(track),
                         isCurrentPlaying = currentSongId == track.songId,

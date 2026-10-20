@@ -22,9 +22,6 @@ interface HistoryDao {
     @Update
     suspend fun update(track: HistoryTrack)
 
-    @Query("UPDATE history_tracks SET playedAt = :playedAt WHERE songId = :songId")
-    suspend fun touchPlayedAt(songId: String, playedAt: Long)
-
     @Query("DELETE FROM history_tracks WHERE id = :id")
     suspend fun deleteById(id: Long)
 

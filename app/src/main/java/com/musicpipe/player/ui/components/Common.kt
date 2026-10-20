@@ -25,18 +25,20 @@ fun LoadingBlock(modifier: Modifier = Modifier) {
 /** Inline error/degrade banner (used for lyrics degrade, load failures). */
 @Composable
 fun ErrorBanner(text: String, modifier: Modifier = Modifier) {
+    // v1.10.0（V9）：原来叠了 3 层 padding（16/8 + top4 + Text 内 4），
+    // 实际渲染成"上 20 / 下 12 / 左右 20"，与全局 16dp 栅格对不上，
+    // 导致带错误横幅的页面比正常页面左右各多缩进 4dp、上下错位。
+    // 现在只保留一层 16/8（= 栅格），文本本身不再额外加内边距。
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .padding(top = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(4.dp)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }

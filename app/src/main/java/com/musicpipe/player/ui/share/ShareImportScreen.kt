@@ -15,8 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -161,123 +160,142 @@ fun ShareImportScreen(onBack: () -> Unit) {
 private fun ImportTab(state: ShareImportViewModel.UiState, vm: ShareImportViewModel) {
     var qualityMenu by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AppTextField(
-                value = state.url,
-                onValueChange = vm::onUrlChange,
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                placeholder = { Text("粘贴网易云 / QQ音乐 歌单分享链接") }
-            )
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box {
-                TextButton(onClick = { qualityMenu = true }) {
-                    Text(
-                        "音质：" + GatewayUtil.qualityLabel(state.quality),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Icon(
-                        Icons.Filled.ArrowDropDown, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                DropdownMenu(expanded = qualityMenu, onDismissRequest = { qualityMenu = false }) {
-                    GatewayUtil.QUALITIES.forEach { q ->
-                        DropdownMenuItem(
-                            text = { Text(GatewayUtil.qualityLabel(q)) },
-                            onClick = { vm.setQuality(q); qualityMenu = false }
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            Button(
-                onClick = { vm.parse() },
-                enabled = !state.parsing && state.url.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = DsoColors.AppRed)
-            ) { Text(if (state.parsing) "解析中…" else "解析链接") }
-        }
-
-        if (state.parsing) {
-            Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = DsoColors.AppRed)
-            }
-        }
-        if (state.parseError != null) ErrorBanner(state.parseError!!)
-
-        state.preview?.let { p ->
-            val link = p.link
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text(
-                    link?.title ?: "歌单",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                val sub = buildList {
-                    add(platformLabel(link?.platform))
-                    link?.shareUser?.takeIf { it.isNotBlank() }?.let { add(it) }
-                    add((link?.songCount ?: p.songs.size).toString() + " 首")
-                    link?.status?.let { add(shareStatusLabel(it)) }
-                }.joinToString(" · ")
-                Text(
-                    sub, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            val selectableCount = p.songs.count {
-                it.inLib == 0 && (it.state == null || it.state == "preview" || it.state == "failed")
-            }
+    // v1.10.0（P4）：改成 LazyColumn。
+    // 原来是 Column(verticalScroll) + p.songs.forEach{...}：解析一个 100+ 首的歌单要
+    // 立刻组合全部行的 Checkbox（每个 Checkbox 还有自己的动画/交互对象），首帧明显卡顿、
+    // 内存也高；而屏幕上其实只能看到 10 行左右。
+    LazyColumn(Modifier.fillMaxSize()) {
+        item(key = "url_input", contentType = "header") {
             Row(
-                Modifier.fillMaxWidth().clickable { vm.selectAll() }
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Checkbox(
-                    checked = state.selected.isNotEmpty() && state.selected.size == selectableCount,
-                    onCheckedChange = { vm.selectAll() },
-                    colors = CheckboxDefaults.colors(checkedColor = DsoColors.AppRed)
-                )
-                Text(
-                    "全选", style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    "已选 " + state.selected.size + " 首",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(end = 12.dp)
+                AppTextField(
+                    value = state.url,
+                    onValueChange = vm::onUrlChange,
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    placeholder = { Text("粘贴网易云 / QQ音乐 歌单分享链接") }
                 )
             }
+        }
+        item(key = "actions", contentType = "header") {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box {
+                    TextButton(onClick = { qualityMenu = true }) {
+                        Text(
+                            "音质：" + GatewayUtil.qualityLabel(state.quality),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Icon(
+                            Icons.Filled.ArrowDropDown, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(expanded = qualityMenu, onDismissRequest = { qualityMenu = false }) {
+                        GatewayUtil.QUALITIES.forEach { q ->
+                            DropdownMenuItem(
+                                text = { Text(GatewayUtil.qualityLabel(q)) },
+                                onClick = { vm.setQuality(q); qualityMenu = false }
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Button(
+                    onClick = { vm.parse() },
+                    enabled = !state.parsing && state.url.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = DsoColors.AppRed)
+                ) { Text(if (state.parsing) "解析中…" else "解析链接") }
+            }
+        }
+        if (state.parsing) {
+            item(key = "parsing", contentType = "loading") {
+                Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = DsoColors.AppRed)
+                }
+            }
+        }
+        state.parseError?.let { msg ->
+            item(key = "parse_error", contentType = "error") { ErrorBanner(msg) }
+        }
 
-            p.songs.forEach { song ->
+        val p = state.preview
+        if (p != null) {
+            item(key = "preview_head", contentType = "header") {
+                val link = p.link
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text(
+                        link?.title ?: "歌单",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    val sub = buildList {
+                        add(platformLabel(link?.platform))
+                        link?.shareUser?.takeIf { it.isNotBlank() }?.let { add(it) }
+                        add((link?.songCount ?: p.songs.size).toString() + " 首")
+                        link?.status?.let { add(shareStatusLabel(it)) }
+                    }.joinToString(" · ")
+                    Text(
+                        sub, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            item(key = "select_all", contentType = "header") {
+                val selectableCount = p.songs.count {
+                    it.inLib == 0 && (it.state == null || it.state == "preview" || it.state == "failed")
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable { vm.selectAll() }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = state.selected.isNotEmpty() && state.selected.size == selectableCount,
+                        onCheckedChange = { vm.selectAll() },
+                        colors = CheckboxDefaults.colors(checkedColor = DsoColors.AppRed)
+                    )
+                    Text(
+                        "全选", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        "已选 " + state.selected.size + " 首",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                }
+            }
+            itemsIndexed(
+                items = p.songs,
+                key = { _, song -> "song_" + song.extKey },
+                contentType = { _, _ -> "song" }
+            ) { _, song ->
                 SongCheckRow(
                     song = song,
                     checked = song.extKey in state.selected,
                     onToggle = { vm.toggleSong(song.extKey) }
                 )
             }
-
-            Button(
-                onClick = { vm.commit() },
-                enabled = state.selected.isNotEmpty() && !state.committing,
-                colors = ButtonDefaults.buttonColors(containerColor = DsoColors.AppRed),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
-            ) {
-                Text(if (state.committing) "提交中…" else "导入所选（" + state.selected.size + "）")
+            item(key = "commit", contentType = "footer") {
+                Button(
+                    onClick = { vm.commit() },
+                    enabled = state.selected.isNotEmpty() && !state.committing,
+                    colors = ButtonDefaults.buttonColors(containerColor = DsoColors.AppRed),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text(if (state.committing) "提交中…" else "导入所选（" + state.selected.size + "）")
+                }
             }
         }
-        Spacer(Modifier.height(90.dp))
+        item(key = "bottom_pad", contentType = "spacer") { Spacer(Modifier.height(90.dp)) }
     }
 }
 

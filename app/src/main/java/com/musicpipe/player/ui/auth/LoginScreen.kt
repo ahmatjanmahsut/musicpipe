@@ -26,6 +26,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,13 +36,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musicpipe.player.ui.components.AppOutlinedTextField
 import com.musicpipe.player.data.model.AppUser
 import com.musicpipe.player.di.LocalAppContainer
 import com.musicpipe.player.ui.theme.DsoColors
+import com.musicpipe.player.ui.theme.DsoShapes
 
 /**
  * Login + register (requirement 1). DsoMusic style: white page, red theme button,
@@ -61,8 +62,13 @@ fun LoginScreen(onLoggedIn: (AppUser) -> Unit) {
     var showServerDialog by remember { mutableStateOf(false) }
     val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
 
-    // react to logged-in
-    (state as? AuthViewModel.UiState.LoggedIn)?.let { onLoggedIn(it.user) }
+    // v1.10.0（C4）：回调移进 LaunchedEffect。
+    // 在组合体里直接调用外部回调，一旦它写任何 state 就会触发
+    // "Writing to state during composition" 甚至反复重启组合；副作用必须放进 effect。
+    val loggedIn = (state as? AuthViewModel.UiState.LoggedIn)?.user
+    LaunchedEffect(loggedIn) {
+        loggedIn?.let(onLoggedIn)
+    }
 
     Column(
         modifier = Modifier
@@ -74,7 +80,7 @@ fun LoginScreen(onLoggedIn: (AppUser) -> Unit) {
         Spacer(Modifier.height(96.dp))
         Text(
             "MusicPipe",
-            fontSize = 34.sp,
+            style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
             color = DsoColors.AppRed
         )
@@ -158,7 +164,7 @@ fun LoginScreen(onLoggedIn: (AppUser) -> Unit) {
             onValueChange = { username = it },
             label = { Text("用户名") },
             singleLine = true,
-            shape = RoundedCornerShape(8.dp),
+            shape = DsoShapes.Input,
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(14.dp))
@@ -169,7 +175,7 @@ fun LoginScreen(onLoggedIn: (AppUser) -> Unit) {
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
-            shape = RoundedCornerShape(8.dp),
+            shape = DsoShapes.Input,
             modifier = Modifier.fillMaxWidth()
         )
         if (mode == "register") {
@@ -180,7 +186,7 @@ fun LoginScreen(onLoggedIn: (AppUser) -> Unit) {
                 label = { Text("确认密码") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
-                shape = RoundedCornerShape(8.dp),
+                shape = DsoShapes.Input,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -204,14 +210,24 @@ fun LoginScreen(onLoggedIn: (AppUser) -> Unit) {
                     else -> vm.register(username, password)
                 }
             },
-            shape = RoundedCornerShape(24.dp),
+            shape = DsoShapes.LoginButton,
             colors = ButtonDefaults.buttonColors(containerColor = DsoColors.AppRed),
             modifier = Modifier.fillMaxWidth().height(48.dp)
         ) {
             if (state is AuthViewModel.UiState.Busy) {
-                CircularProgressIndicator(color = DsoColors.PageWhite, strokeWidth = 2.dp, modifier = Modifier.height(20.dp))
+                // v1.10.0（V3）：原实现只给了 height，宽度未约束 —— CircularProgressIndicator 是
+                // 画在 Canvas 上且 Modifier 无限宽的情况下会撑满父布局，于是被压成扁椭圆。
+                // 用 size(20.dp) 同时约束宽高才是正圆。
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(20.dp)
+                )
             } else {
-                Text(if (mode == "login") "登 录" else "注 册", fontSize = 16.sp)
+                Text(
+                    if (mode == "login") "登 录" else "注 册",
+                    style = MaterialTheme.typography.bodyLarge
+                )
             }
         }
 

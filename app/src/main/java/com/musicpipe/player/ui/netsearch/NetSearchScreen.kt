@@ -67,6 +67,7 @@ import com.musicpipe.player.ui.components.EmptyBlock
 import com.musicpipe.player.ui.components.ErrorBanner
 import com.musicpipe.player.ui.components.LoadingBlock
 import com.musicpipe.player.ui.theme.DsoColors
+import com.musicpipe.player.ui.theme.DsoShapes
 import com.musicpipe.player.util.GatewayUtil
 import com.musicpipe.player.util.TimeFormat
 
@@ -271,7 +272,7 @@ private fun NetSongRow(song: NetSong, downloading: Boolean, onOpen: () -> Unit) 
         AsyncImage(
             model = song.img,
             contentDescription = null,
-            modifier = Modifier.size(46.dp).clip(RoundedCornerShape(6.dp))
+            modifier = Modifier.size(46.dp).clip(DsoShapes.SmallSurface)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentScale = ContentScale.Crop
         )
@@ -359,7 +360,7 @@ private fun NetSongDetailDialog(
                     val ok = song.supportsQuality(q)
                     Row(
                         Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(DsoShapes.Input)
                             .clickable(enabled = ok) { onSelect(q) }
                             .padding(horizontal = 8.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically

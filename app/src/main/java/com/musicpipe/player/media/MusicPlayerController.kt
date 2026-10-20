@@ -51,9 +51,26 @@ class MusicPlayerController(
      */
     private var pendingAction: ((MediaController) -> Unit)? = null
 
+    /**
+     * v1.10.0（C3）：除"播放意图"之外还要保留**顺序**。
+     *
+     * 原来只有 pendingAction 一个槽位，绑定窗口内连点会覆盖前一次操作
+     * （例如用户点了「下一首」再点「播放」，第一个动作直接丢失）。
+     * 现在按入队顺序在连上后依次执行；pendingAction 单独留一个槽位，
+     * 因为"要播放/要换队列"这类意图只需要最后一次生效。
+     */
+    private val pendingQueue = ArrayDeque<(MediaController) -> Unit>()
+
     private fun withController(block: (MediaController) -> Unit) {
         val mc = controller
-        if (mc != null) block(mc) else pendingAction = block
+        if (mc != null) {
+            block(mc)
+        } else {
+            pendingAction = block
+            pendingQueue.addLast(block)
+            // 防御：极端情况下（服务一直连不上）不让队列无限增长。
+            while (pendingQueue.size > MAX_PENDING) pendingQueue.removeFirst()
+        }
     }
 
     private val listener = object : Player.Listener {
@@ -91,9 +108,11 @@ class MusicPlayerController(
         c?.addListener(listener)
         refresh()
         if (c?.isPlaying == true) startPositionPolling()
-        // 首帧后延迟绑定期间用户可能已经点了播放：这里补执行，不能丢。
-        pendingAction?.let { action -> c?.let(action) }
+        // 首帧后延迟绑定期间用户可能已经点了播放：按顺序补执行，不能丢。
+        val pending = pendingQueue.toList()
+        pendingQueue.clear()
         pendingAction = null
+        if (c != null) pending.forEach { action -> runCatching { action(c) } }
     }
 
     fun playQueue(songs: List<Song>, startIndex: Int = 0) {
@@ -117,7 +136,23 @@ class MusicPlayerController(
         if (mc.isPlaying) mc.pause() else { mc.prepare(); mc.play() }
     }
 
-    fun seekTo(positionMs: Long) { withController { it.seekTo(positionMs) }; refresh() }
+    /**
+     * v1.10.0（P8）：拖动进度条后不能立刻用 currentPosition 覆盖 UI。
+     *
+     * ExoPlayer 的 seekTo 是**异步**的：返回时 currentPosition 仍是旧值，
+     * 原来紧接着的 refresh() 会把滑到的位置又写回旧值 → 进度条"弹回去一下再跳过来"。
+     * 现在先把目标位置乐观写进 state（用户手指位置立即生效），
+     * 再在短暂延迟后 refresh 一次拿真实位置（seek 通常几十毫秒内完成）。
+     */
+    fun seekTo(positionMs: Long) {
+        val target = positionMs.coerceAtLeast(0)
+        _state.value = _state.value.copy(positionMs = target)
+        withController { it.seekTo(target) }
+        scope.launch {
+            delay(SEEK_SETTLE_MS)
+            refresh()
+        }
+    }
     fun next() = withController { it.seekToNextMediaItem(); it.prepare() }
     fun previous() = withController { it.seekToPreviousMediaItem(); it.prepare() }
 
@@ -171,5 +206,12 @@ class MusicPlayerController(
     private fun stopPositionPolling() {
         positionJob?.cancel()
         positionJob = null
+    }
+
+    private companion object {
+        /** 连上之前最多暂存多少个操作（远超正常人手速，仅防泄漏）。 */
+        const val MAX_PENDING = 16
+        /** seek 之后等多久再回读真实位置，避免把乐观值又覆盖成旧值。 */
+        const val SEEK_SETTLE_MS = 220L
     }
 }

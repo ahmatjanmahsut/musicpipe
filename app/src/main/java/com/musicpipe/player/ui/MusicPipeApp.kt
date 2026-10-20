@@ -1,8 +1,12 @@
 package com.musicpipe.player.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
@@ -112,6 +116,15 @@ private fun MainScaffoldContent(user: AppUser) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
+            // v1.10.0（V8）：进入 SEARCH / NET_SEARCH / TASKS / SHARE_IMPORT / ADMIN_USERS 时
+            // 既没有 mini player 也没有 tab 栏，bottomBar 整个为空 —— 而 Scaffold 只有在
+            // bottomBar 存在时才把系统导航条的 inset 让给内容，于是这些页面内容会整体下移
+            // 到导航栏底下、和其它页面的留白不一致（切页时肉眼可见一跳）。
+            // 这里在"有 tab 但没有 mini player"或"两者都没有"时补一个等高 Spacer，
+            // 保证 bottomBar 始终占位、底部 inset 恒定。
+            if (!isFullPage && !(showMini || showTabs)) {
+                Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+            }
             if (!isFullPage && (showMini || showTabs)) {
                 Column {
                     if (showMini) {

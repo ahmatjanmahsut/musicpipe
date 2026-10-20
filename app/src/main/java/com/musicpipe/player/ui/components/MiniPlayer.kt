@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -31,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.musicpipe.player.data.model.Song
 import com.musicpipe.player.ui.theme.DsoColors
+import com.musicpipe.player.ui.theme.DsoShapes
+import com.musicpipe.player.ui.theme.LocalDsoPalette
 
 /**
  * DsoMusic-style mini player bar (docs/03): translucent white blur look,
@@ -63,8 +64,8 @@ fun MiniPlayer(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(DsoColors.CoverPlaceholder),
+                    .clip(DsoShapes.Small)
+                    .background(LocalDsoPalette.current.coverPlaceholder),
                 contentAlignment = Alignment.Center
             ) {
                 if (song.coverUrl != null) {

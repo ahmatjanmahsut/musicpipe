@@ -97,7 +97,7 @@ class HomeFoldersTest {
     fun buildFolderGridCachesSubtitleAndCovers() {
         val songs = listOf(song("1", "专辑A"), song("2", "专辑A"))
         val share = HomeCollection(id = "s1", title = "我喜欢的音乐", songs = songs, missing = 0)
-        val grid: List<HomeFolderGrid> = HomeFoldersSub.grid(listOf(share), songs)
+        val grid: List<HomeFolderGrid> = buildFolderGrid(HomeAxis.PLAYLISTS, listOf(share), songs)
         val shareCell = grid.first { it.kind == HomeFolder.Kind.SHARE }
         assertEquals("share:s1", shareCell.id)
         assertEquals("s1", shareCell.folder.shareId)
@@ -109,7 +109,7 @@ class HomeFoldersTest {
     fun shareSubtitleMentionsMissingTracks() {
         val songs = listOf(song("1", "专辑A"))
         val share = HomeCollection(id = "s1", title = "歌单", songs = songs, missing = 60)
-        val grid = HomeFoldersSub.grid(listOf(share), songs)
+        val grid = buildFolderGrid(HomeAxis.PLAYLISTS, listOf(share), songs)
         val subtitle = grid.first { it.kind == HomeFolder.Kind.SHARE }.subtitle
         assertTrue(subtitle.contains("60"))
         assertTrue(subtitle.contains("未入库"))
@@ -118,7 +118,7 @@ class HomeFoldersTest {
     @Test
     fun albumFolderCarriesNoShareId() {
         val songs = listOf(song("1", "专辑A"))
-        val grid = HomeFoldersSub.grid(HomeAxis.ALBUMS, emptyList(), songs)
+        val grid = buildFolderGrid(HomeAxis.ALBUMS, emptyList(), songs)
         assertEquals(null, grid.first { it.kind == HomeFolder.Kind.ALBUM }.folder.shareId)
     }
 
@@ -126,8 +126,8 @@ class HomeFoldersTest {
     fun subtitleTextIsPureFunctionOfFolder() {
         val songs = listOf(song("1", "专辑A"), song("2", "专辑A"))
         val album = HomeFolder("album:专辑A", "专辑A", HomeFolder.Kind.ALBUM, songs)
-        assertEquals(HomeFoldersSub.subtitle(album), album.let { HomeFoldersSub.subtitle(it) })
-        assertTrue(HomeFoldersSub.subtitle(album).startsWith("2 首"))
+        assertEquals(buildFolderSubtitleText(album), album.let { buildFolderSubtitleText(it) })
+        assertTrue(buildFolderSubtitleText(album).startsWith("2 首"))
     }
 
     @Test
@@ -137,11 +137,11 @@ class HomeFoldersTest {
         // 每个轴各自与对应的原始分组规则对齐（两轴拼接的 build() 不再等于单个轴的网格）
         assertEquals(
             HomeFolders.buildPlaylists(listOf(share)).map { f -> f.id },
-            HomeFoldersSub.grid(HomeAxis.PLAYLISTS, listOf(share), songs).map { g -> g.id }
+            buildFolderGrid(HomeAxis.PLAYLISTS, listOf(share), songs).map { g -> g.id }
         )
         assertEquals(
             HomeFolders.buildAlbums(songs).map { f -> f.id },
-            HomeFoldersSub.grid(HomeAxis.ALBUMS, listOf(share), songs).map { g -> g.id }
+            buildFolderGrid(HomeAxis.ALBUMS, listOf(share), songs).map { g -> g.id }
         )
     }
 
@@ -159,8 +159,8 @@ class HomeFoldersTest {
     fun axesAreDisjointSoNothingIsShownTwice() {
         val songs = (1..5).map { song(it.toString(), "demo") }
         val share = HomeCollection(id = "s1", title = "我喜欢的音乐", songs = songs, missing = 0)
-        val playlists = HomeFoldersSub.grid(HomeAxis.PLAYLISTS, listOf(share), songs).map { it.id }
-        val albums = HomeFoldersSub.grid(HomeAxis.ALBUMS, listOf(share), songs).map { it.id }
+        val playlists = buildFolderGrid(HomeAxis.PLAYLISTS, listOf(share), songs).map { it.id }
+        val albums = buildFolderGrid(HomeAxis.ALBUMS, listOf(share), songs).map { it.id }
         assertEquals(listOf("share:s1"), playlists)
         assertEquals(listOf("album:demo"), albums)
         assertTrue("两轴不应共享任何文件夹 id", playlists.intersect(albums.toSet()).isEmpty())
@@ -170,7 +170,7 @@ class HomeFoldersTest {
     fun playlistsAxisHoldsOnlyShareFolders() {
         val songs = listOf(song("1", "专辑A"), song("2", ""))
         val share = HomeCollection(id = "s1", title = "歌单", songs = listOf(songs[0]), missing = 3)
-        val grid = HomeFoldersSub.grid(HomeAxis.PLAYLISTS, listOf(share), songs)
+        val grid = buildFolderGrid(HomeAxis.PLAYLISTS, listOf(share), songs)
         // 专辑轴的东西（专辑文件夹、未分类）一律不该出现在歌单轴里
         assertTrue(grid.all { it.kind == HomeFolder.Kind.SHARE })
         assertEquals(1, grid.size)
@@ -181,7 +181,7 @@ class HomeFoldersTest {
     fun albumsAxisHoldsNoShareFolders() {
         val songs = listOf(song("1", "专辑A"), song("2", ""))
         val share = HomeCollection(id = "s1", title = "歌单", songs = songs, missing = 0)
-        val grid = HomeFoldersSub.grid(HomeAxis.ALBUMS, listOf(share), songs)
+        val grid = buildFolderGrid(HomeAxis.ALBUMS, listOf(share), songs)
         assertTrue(grid.none { it.kind == HomeFolder.Kind.SHARE })
         // 专辑 + 未分类
         assertTrue(grid.any { it.kind == HomeFolder.Kind.ALBUM })
@@ -192,7 +192,7 @@ class HomeFoldersTest {
     fun everySongStaysReachableInAlbumsAxis() {
         // 拆轴不能丢歌：专辑轴必须覆盖整个曲库（专辑 + 未分类）。
         val songs = listOf(song("1", "专辑A"), song("2", "专辑B"), song("3", ""))
-        val reachable = HomeFoldersSub.grid(HomeAxis.ALBUMS, emptyList(), songs)
+        val reachable = buildFolderGrid(HomeAxis.ALBUMS, emptyList(), songs)
             .flatMap { it.folder.songs }
             .map { it.id }
             .toSet()
@@ -221,6 +221,6 @@ class HomeFoldersTest {
 
     @Test
     fun emptyGridWhenNothingToShow() {
-        assertTrue(HomeFoldersSub.grid(emptyList(), emptyList()).isEmpty())
+        assertTrue(buildFolderGrid(HomeAxis.PLAYLISTS, emptyList(), emptyList()).isEmpty())
     }
 }

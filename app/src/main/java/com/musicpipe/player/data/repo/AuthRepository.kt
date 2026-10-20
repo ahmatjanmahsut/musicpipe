@@ -101,6 +101,9 @@ class AuthRepository(
                 prefs.clearLastSession()
                 _currentUser.value = null
                 _restoreReady.value = true
+                // v1.10.0（C1）：token 已失效，本地缓存同样要清，
+                // 否则重新登录后首屏画的是上个会话的画面。
+                runLogoutCleanup()
                 null
             } else {
                 // Server reachable but failing: allow offline entry with the cached identity.
@@ -155,11 +158,29 @@ class AuthRepository(
         return login(username, password)
     }
 
+    /**
+     * v1.10.0（C1）：登出后要清掉的本地缓存（曲库快照、歌词缓存）。
+     *
+     * 用注入钩子而不是直接依赖 SongRepository / LyricsRepository：
+     * 那两个仓库依赖 api+db，而 AuthRepository 是它们之上的一层，
+     * 直接互相引用会形成构造期循环。由 AppContainer 在 init 里接上。
+     *
+     * 为什么必须清：曲库快照是"上次会话的画面"。不清的话，下次任何账号
+     * （或未登录状态下被 401 踢回登录页后重新登录）打开首页，HomeViewModel.init
+     * 会先把上一会话的曲库画出来再等网络覆盖 —— 用户会看到不属于当前会话的内容。
+     */
+    var onLogoutCleanup: (suspend () -> Unit)? = null
+
+    private suspend fun runLogoutCleanup() {
+        runCatching { onLogoutCleanup?.invoke() }
+    }
+
     suspend fun logout() {
         try { api.logout() } catch (_: Throwable) { /* best effort — the token may already be dead */ }
         AuthTokens.clear()
         prefs.setAuthToken("")
         prefs.clearLastSession()
         _currentUser.value = null
+        runLogoutCleanup()
     }
 }

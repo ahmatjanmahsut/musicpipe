@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.musicpipe.player.data.model.Song
 import com.musicpipe.player.ui.theme.DsoColors
+import com.musicpipe.player.ui.theme.DsoShapes
+import com.musicpipe.player.ui.theme.LocalDsoPalette
 import com.musicpipe.player.util.TimeFormat
 
 /** DsoMusic-style song row: 48dp cover (4dp radius), title, artist · album, duration. */
@@ -43,11 +44,12 @@ fun SongListItem(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        val palette = LocalDsoPalette.current
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(DsoColors.CoverPlaceholder),
+                .clip(DsoShapes.Small)
+                .background(palette.coverPlaceholder),
             contentAlignment = Alignment.Center
         ) {
             if (song.coverUrl != null) {
@@ -55,7 +57,7 @@ fun SongListItem(
                     model = song.coverUrl,
                     contentDescription = song.title,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp))
+                    modifier = Modifier.size(48.dp).clip(DsoShapes.Small)
                 )
             } else {
                 Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
