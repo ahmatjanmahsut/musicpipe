@@ -1,0 +1,3 @@
+# pnpm >= 10 在此声明构建白名单（package.json 的 pnpm 字段已废弃）
+onlyBuiltDependencies:
+  - esbuild

@@ -1,0 +1,42 @@
+# Android / Gradle
+.tools/
+.gradle/
+.kotlin/
+build/
+app/build/
+local.properties
+*.apk
+*.aab
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Node
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+*.log
+
+# Runtime data & databases (never commit real user data)
+/data/
+/server/data/
+/server/.tmp-debug/
+*.db
+*.db-shm
+*.db-wal
+.rclone/
+config/
+
+# Secrets
+*.keystore
+*.jks
+*.pem
+*.p12
+.env
+.env.local
+
+# Tooling scratch
+.tmp/
+.ref/
+.idea/

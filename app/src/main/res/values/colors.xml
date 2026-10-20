@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- v1.8.0：窗口背景 = App 真实背景色（DsoColors.PageBg #F9F9F9）。
+         它在 Compose 画出首帧之前由系统绘制，值不对就会看到"白屏一闪"。
+         暗色值见 values-night/colors.xml。 -->
+    <color name="windowBackground">#FFF9F9F9</color>
+    <color name="statusBarBackground">#FFFFFFFF</color>
+</resources>

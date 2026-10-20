@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- v1.8.0：暗色下状态栏要深底浅字，否则白底状态栏会先出现再变暗。 -->
+    <style name="Theme.MusicPipe" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/windowBackground</item>
+        <item name="android:statusBarColor">@color/statusBarBackground</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

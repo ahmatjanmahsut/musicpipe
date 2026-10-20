@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DsoMusic-style launcher icon: red rounded square with white music note -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#DB2C1F"
+        android:pathData="M10,0 L38,0 A10,10 0 0 1 48,10 L48,38 A10,10 0 0 1 38,48 L10,48 A10,10 0 0 1 0,38 L0,10 A10,10 0 0 1 10,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,10 L20,13.2 L20,28.4 A4.6,4.6 0 1 0 23.2,32.8 A4.6,4.6 0 0 0 22.4,30 L22.4,18.6 L29.6,16.7 L29.6,24.4 A4.6,4.6 0 1 0 32.8,28.8 A4.6,4.6 0 0 0 32,26 Z" />
+</vector>
