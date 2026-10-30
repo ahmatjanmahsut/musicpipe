@@ -5,36 +5,17 @@ import { search as platSearch, PLATFORM_NAMES } from "./sources/search.js";
 import { enqueueDownload } from "./downloader/queue.js";
 import { navRequest, startScan, scanStatus, getJwt } from "./pipeline/navidrome.js";
 import { prepareShareLink, getSharePreview, commitShareLink, syncShareLink } from "./pipeline/sharelink.js";
-import { getClient, davPath, putBuffer, deleteRemote as delRemote } from "./webdav/client.js";
+import { getClient, davPath, deleteRemote as delRemote } from "./webdav/client.js";
 import { refreshDir as refreshShare } from "./webdav/rclone.js";
 import { cancelTask as cancelShareTask } from "./downloader/queue.js";
-import { sniffImageType, fetchCoverBuf } from "./downloader/cover.js";
-import { lookupCoverUrl } from "./downloader/coverlookup.js";
+import { sniffImageType } from "./downloader/cover.js";
+import { cachedAudio, prefetchAudio, audioCacheStats } from "./services/audioCache.js";
 
 const PLATS = ["kw", "kg", "tx", "wy"];
 var ndMap = new Map();      // trackId -> {ndSongId, coverArt, ts}
 var coverCache = new Map(); // key -> {buf, type, ts}
 
 function err(reply, code, msg) { reply.code(code); return { error: msg }; }
-
-/**
- * v1.9.1 封面自愈：网盘没有 .jpg sidecar、Navidrome 也没有 coverArt 时，
- * 按"歌名+歌手"在线反查一次并立刻写成 sidecar（下次直接命中，不必等重新下载）。
- * 只做 best-effort：任何失败都返回 null，不影响 404 语义，也绝不影响播放。
- */
-async function lazyCover(r) {
-  if (!r || !r.remote_path) return null;
-  var url = null;
-  try { url = await lookupCoverUrl(r.title, r.artist); } catch (e) { url = null; }
-  if (!url) return null;
-  var buf = await fetchCoverBuf(url);
-  if (!buf) return null;
-  var type = sniffImageType(buf) || "image/jpeg";
-  try { await putBuffer(String(r.remote_path).replace(/\.[a-z0-9]+$/i, "") + ".jpg", buf); } catch (e) {}
-  coverCache.set(r.id + "-sidecar", { buf: buf, type: type, ts: Date.now() });
-  try { logEvent("cover_heal", (r.title || "") + " <- " + String(url).slice(0, 80)); } catch (e) {}
-  return { buf: buf, type: type };
-}
 
 function trackBrief(r) {
   return {
@@ -75,174 +56,32 @@ function parseLrc(text) {
   return out;
 }
 
-// ===== 歌词读取（v1.5.0 重写：内存 LRU + 两级并发 + 短超时） =====
-// 旧实现串行三级回退且零缓存，命中侧车也要 287-836ms；第三级 mtScrapeRead 在
-// musictag.js 中并不存在（每次必抛 TypeError 被空 catch 吞掉），属死代码已删除。
-var lrcCache = new Map();     // trackId -> { text, ts }（含空结果，负缓存）
-var LRC_TTL = 3600000;        // 正结果 1 小时
-var LRC_NEG_TTL = 300000;     // 空结果 5 分钟，避免无歌词曲反复回源
-var LRC_MAX = 500;            // LRU 上限
-var LRC_TIER_MS = 8000;       // 单级超时（WebDAV 客户端自带 120s，必须自行截断）
-
-function lrcCacheGet(k) {
-  var hit = lrcCache.get(k);
-  if (!hit) return undefined;
-  var ttl = hit.text ? LRC_TTL : LRC_NEG_TTL;
-  if (Date.now() - hit.ts > ttl) { lrcCache.delete(k); return undefined; }
-  return hit.text;
-}
-
-function lrcCacheSet(k, text) {
-  lrcCache.delete(k);
-  lrcCache.set(k, { text: text, ts: Date.now() });
-  while (lrcCache.size > LRC_MAX) {
-    var oldest = lrcCache.keys().next();
-    if (oldest.done) break;
-    lrcCache.delete(oldest.value);
-  }
-}
-
-/** 从 tracks.extra 里取持久化的歌词文本（下载/刮削时写入，命中即 0ms）。 */
-function lrcFromDb(track) {
-  try {
-    var extra = JSON.parse(track.extra || "{}");
-    var lrc = extra && extra.lrc;
-    return typeof lrc === "string" && lrc.length > 0 ? lrc : "";
-  } catch (e) {
-    return "";
-  }
-}
-
-/** 把歌词文本持久化进 tracks.extra（不改表结构），失败静默。 */
-function lrcPersist(trackId, text) {
-  if (!text) return;
-  try {
-    var row = getDb().prepare("SELECT extra FROM tracks WHERE id=?").get(trackId);
-    if (!row) return;
-    var extra = {};
-    try { extra = JSON.parse(row.extra || "{}"); } catch (e) { extra = {}; }
-    if (extra.lrc === text) return;
-    extra.lrc = text;
-    getDb().prepare("UPDATE tracks SET extra=? WHERE id=?").run(JSON.stringify(extra), trackId);
-  } catch (e) {}
-}
-
-// v1.5.0 歌词预热：把全库歌词在后台逐首抓一遍并持久化到 tracks.extra。
-// 冷路径每首约 400-700ms（123pan WebDAV getFileContents 的固有延迟），但**每首只需付一次**：
-// 写进 DB 后无论容器怎么重启都是 2ms。放在启动后延迟执行、串行限速，避免开机就把
-// 网盘 API 打爆或与下载任务抢带宽。可用 settings.lyrics_prewarm=0 关闭。
-var LRC_WARM_DELAY_MS = 30000;   // 启动后等 30s，先让服务把冷启动的其它事做完
-var LRC_WARM_GAP_MS = 400;       // 每首之间间隔，串行慢跑
-var lrcWarmRunning = false;
-
-async function lrcPrewarm() {
-  if (lrcWarmRunning) return;
-  if (String(cfg("lyrics_prewarm", "1")) === "0") return;
-  lrcWarmRunning = true;
-  try {
-    var rows = getDb().prepare(
-      "SELECT * FROM tracks WHERE remote_path IS NOT NULL AND remote_path <> '' AND status <> 'failed' ORDER BY created_at DESC"
-    ).all();
-    var done = 0, hit = 0, miss = 0;
-    for (var i = 0; i < rows.length; i++) {
-      var t = rows[i];
-      // 已有持久化结果（含之前抓过但确实没有歌词的曲目）直接跳过
-      var extra = {};
-      try { extra = JSON.parse(t.extra || "{}"); } catch (e) { extra = {}; }
-      if (typeof extra.lrc === "string" && extra.lrc !== "") { done++; continue; }
-      if (extra.lrcNone) { done++; continue; }
-      try {
-        var text = await lrcText(t);
-        if (text) hit++; else miss++;
-        // 没有歌词也要落一个空标记，避免下次预热再抓一遍
-        if (!text) {
-          try {
-            extra.lrcNone = 1;
-            getDb().prepare("UPDATE tracks SET extra=? WHERE id=?").run(JSON.stringify(extra), t.id);
-          } catch (e2) {}
-        }
-      } catch (e3) {}
-      done++;
-      await new Promise(function (r) { setTimeout(r, LRC_WARM_GAP_MS); });
-    }
-    logEvent("lyrics_prewarm", "warm done=" + done + " hit=" + hit + " miss=" + miss);
-    console.log("[lrc-warm] done=" + done + " hit=" + hit + " miss=" + miss);
-  } catch (e) {
-    console.log("[lrc-warm] failed: " + (e && e.message));
-  } finally {
-    lrcWarmRunning = false;
-  }
-}
-
-setTimeout(function () { lrcPrewarm(); }, LRC_WARM_DELAY_MS);
-
-/** 给任意 promise 加超时；超时或异常返回 fallback，绝不阻塞整体。 */
-function withTimeout(p, ms, fallback) {
-  return new Promise(function (resolve) {
-    var settled = false;
-    var timer = setTimeout(function () {
-      if (settled) return;
-      settled = true;
-      resolve(fallback);
-    }, ms);
-    Promise.resolve(p).then(
-      function (v) { if (settled) return; settled = true; clearTimeout(timer); resolve(v); },
-      function () { if (settled) return; settled = true; clearTimeout(timer); resolve(fallback); }
-    );
-  });
-}
-
-/** 第一级：网盘同名 .lrc 侧车。 */
-function lrcFromSidecar(track) {
+async function lrcText(track) {
+  // 1) 网盘同名 .lrc  sidecar
   try {
     var lrcPath = davPath(String(track.remote_path).replace(/\.[a-z0-9]+$/i, "") + ".lrc");
-    return Promise.resolve(getClient().getFileContents(lrcPath)).then(function (buf) {
-      var s = typeof buf === "string" ? buf : String(buf);
-      return s && /\[\d\d:/.test(s) ? s : "";
-    });
-  } catch (e) {
-    return Promise.resolve("");
-  }
-}
-
-/** 第二级：Navidrome 结构化歌词。 */
-function lrcFromNavidrome(track) {
-  return Promise.resolve(ndOf(track)).then(function (nd) {
-    if (!nd || !nd.ndSongId) return "";
-    return Promise.resolve(navRequest("getLyricsBySongId", "id=" + nd.ndSongId)).then(function (resp) {
+    var buf = await getClient().getFileContents(lrcPath);
+    var s = typeof buf === "string" ? buf : String(buf);
+    if (s && /\[\d\d:/.test(s)) return s;
+  } catch (e) {}
+  // 2) Navidrome 结构化歌词
+  try {
+    var nd = await ndOf(track);
+    if (nd.ndSongId) {
+      var resp = await navRequest("getLyricsBySongId", "id=" + nd.ndSongId);
       var list = (((resp.lyricsBySongId || {}).lyricsList || {}).structuredLyrics || {}).entry || [];
-      if (!list.length) return "";
-      return list.map(function (e2) { return (e2.line || []).join("\n"); }).join("\n");
-    });
-  });
-}
-
-async function lrcText(track) {
-  if (!track || !track.id) return "";
-  // 0) 内存 LRU → 1) DB 持久化（下载/刮削期写入）→ 2) 网盘侧车 / Navidrome 并发
-  var cached = lrcCacheGet(track.id);
-  if (cached !== undefined) return cached;
-  var persisted = lrcFromDb(track);
-  if (persisted) { lrcCacheSet(track.id, persisted); return persisted; }
-
-  // 两级并发：谁先给出非空结果就用谁（侧车仍优先，但不再等它超时后才问 Navidrome）
-  var text = await new Promise(function (resolve) {
-    var done = false;
-    var pending = 2;
-    function settle(v) {
-      if (done) return;
-      if (v) { done = true; resolve(v); return; }
-      pending -= 1;
-      if (pending <= 0) { done = true; resolve(""); }
+      if (list.length) {
+        return list.map(function (e2) { return (e2.line || []).join("\n"); }).join("\n");
+      }
     }
-    withTimeout(lrcFromSidecar(track), LRC_TIER_MS, "").then(settle);
-    withTimeout(lrcFromNavidrome(track), LRC_TIER_MS, "").then(settle);
-    setTimeout(function () { if (!done) { done = true; resolve(""); } }, LRC_TIER_MS + 500);
-  });
-
-  lrcCacheSet(track.id, text || "");
-  if (text) lrcPersist(track.id, text);
-  return text || "";
+  } catch (e) {}
+  // 3) 内嵌歌词（MTW读取口）
+  try {
+    var { mtScrapeRead } = await import("./pipeline/musictag.js");
+    var cur = await mtScrapeRead(track);
+    if (cur && cur.lyrics && cur.lyrics.length > 20) return cur.lyrics;
+  } catch (e) {}
+  return "";
 }
 // v5 账号体系统一：旧单密码网关认证(/api/v1/auth/login|logout|check)已移除。
 // App 认证统一走 /api/v1/accounts/*（用户名+密码，见 routes/appsvc.js）。
@@ -337,15 +176,7 @@ export function registerGateway(app) {
     var c = coverCache.get(key);
     if (!c || Date.now() - c.ts > 600000) {
       var nd = await ndOf(r);
-      if (!nd.coverArt) {
-        // 3) v1.9.1 自愈：两张来源都空时在线反查并落 sidecar（老歌无需重新下载）
-        var healed = await lazyCover(r);
-        if (healed) {
-          reply.header("Cache-Control", "public, max-age=3600");
-          return reply.type(healed.type).send(healed.buf);
-        }
-        return err(reply, 404, "无封面");
-      }
+      if (!nd.coverArt) return err(reply, 404, "无封面");
       try { c = await ndFetchCover(nd.coverArt, size); } catch (e) { return err(reply, 502, "封面获取失败"); }
       coverCache.set(key, c);
     }
@@ -359,9 +190,29 @@ export function registerGateway(app) {
     if (!r || !r.remote_path) return err(reply, 404, "不存在");
     var ext = String(r.remote_path).split(".").pop().toLowerCase();
     var mime = ext === "flac" ? "audio/flac" : ext === "ogg" ? "audio/ogg" : ext === "m4a" ? "audio/mp4" : ext === "wav" ? "audio/wav" : "audio/mpeg";
-    var base = String(cfg("webdav_url", "")).replace(/\/+$/, "");
+    const cached = await cachedAudio(r);
+    if (cached) {
+      const stat = (await import("node:fs/promises")).stat;
+      const size = (await stat(cached)).size;
+      let start = 0, end = size - 1, status = 200;
+      const match = String(req.headers.range || "").match(/^bytes=(\d*)-(\d*)$/);
+      if (match) {
+        if (!match[1] && match[2]) { start = Math.max(0, size - Number(match[2])); }
+        else { start = Number(match[1] || 0); end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1; }
+        if (!Number.isFinite(start) || start >= size || start > end) {
+          reply.code(416).header("Content-Range", "bytes */" + size); return reply.send();
+        }
+        status = 206;
+      }
+      reply.code(status).header("Content-Type", mime).header("Accept-Ranges", "bytes")
+        .header("Content-Length", end - start + 1).header("X-Audio-Cache", "HIT")
+        .header("Cache-Control", "private, max-age=86400");
+      if (status === 206) reply.header("Content-Range", "bytes " + start + "-" + end + "/" + size);
+      return reply.send((await import("node:fs")).createReadStream(cached, { start, end }));
+    }
+    var base = String(cfg("webdav_url", "")).replace(/\/+$/, "").replace(/\/webdav$/i, "/webdav/");
     var parts = davPath(r.remote_path).split("/").map(function (s) { return encodeURIComponent(s); }).join("/");
-    var url = base + parts;
+    var url = base + "/" + parts.replace(/^\/+/, "");
     var auth = "Basic " + Buffer.from(String(cfg("webdav_user", "")) + ":" + String(cfg("webdav_pass", ""))).toString("base64");
     var headers = { Authorization: auth };
     if (req.headers.range) headers.Range = req.headers.range;
@@ -369,15 +220,21 @@ export function registerGateway(app) {
     try { up = await fetch(url, { headers: headers, redirect: "follow" }); }
     catch (e) { return err(reply, 502, "网盘不可达: " + String(e.message || e).slice(0, 80)); }
     if (!up.ok && up.status !== 206) return err(reply, 502, "网盘返回 " + up.status);
+    // 首次播放透传 Range，后台独立完整缓存；客户端断开不阻塞缓存任务。
+    const rangeOnly = /^bytes=\d+-\d+$/.test(String(req.headers.range || ""));
+    if (!rangeOnly) prefetchAudio(r);
     reply.code(up.status === 206 ? 206 : 200);
     reply.header("Content-Type", mime);
     reply.header("Accept-Ranges", "bytes");
     reply.header("Cache-Control", "no-store");
+    reply.header("X-Audio-Cache", "MISS");
     var cl = up.headers.get("content-length"); if (cl) reply.header("Content-Length", cl);
     var cr = up.headers.get("content-range"); if (cr) reply.header("Content-Range", cr);
     const { Readable } = await import("node:stream");
     return reply.send(Readable.fromWeb(up.body));
   });
+
+  app.get("/api/v1/audio-cache", async () => audioCacheStats());
 
   // ===== 分享链接订阅 =====
   // 1) 解析并生成预览（不下载）：{url, quality?, share_user?}
@@ -462,77 +319,6 @@ export function registerGateway(app) {
   app.get("/api/v1/shares/:id/songs", async (req) => {
     var rows = getDb().prepare("SELECT no,title,artist,task_id,track_id,state,added_at FROM sharelink_items WHERE link_id=? ORDER BY no").all(req.params.id);
     return { list: rows };
-  });
-
-  // ===== v1.6.0: 歌单管理（合并）=====
-  // 合并语义：把 source 歌单的条目并入 target，按 (title, artist) 归一化去重；
-  // source 歌单随后删除（只删分享记录，曲库里的歌曲一首不动）。
-  // 冲突处理：target 已有同名同歌手条目时保留 target 的（它可能已下载完成），
-  // 但若 target 那条不完整（track_id 空）而 source 那条已入库，则把 track_id 继承过来。
-  app.post("/api/v1/shares/:id/merge", async (req, reply) => {
-    var target = req.params.id;
-    var body = req.body || {};
-    var source = body.source_id ? String(body.source_id) : "";
-    if (!source) return err(reply, 400, "source_id 为空");
-    if (source === target) return err(reply, 400, "不能把歌单合并到它自己");
-    var db = getDb();
-    var tgt = db.prepare("SELECT * FROM sharelinks WHERE id=?").get(target);
-    var src = db.prepare("SELECT * FROM sharelinks WHERE id=?").get(source);
-    if (!tgt) return err(reply, 404, "目标歌单不存在");
-    if (!src) return err(reply, 404, "被合并的歌单不存在");
-
-    var norm = function (s) {
-      return String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, "");
-    };
-    var tgtRows = db.prepare("SELECT * FROM sharelink_items WHERE link_id=? ORDER BY no").all(target);
-    var srcRows = db.prepare("SELECT * FROM sharelink_items WHERE link_id=? ORDER BY no").all(source);
-
-    var byKey = new Map();
-    for (var r of tgtRows) byKey.set(norm(r.title) + "|" + norm(r.artist), r);
-    var hasTrack = function (r) { return !!(r.track_id && String(r.track_id).trim()); };
-    var isDone = function (r) { return r.state === "done" || r.state === "exists"; };
-
-    var nextNo = tgtRows.reduce(function (m, r) { return Math.max(m, Number(r.no) || 0); }, 0);
-    var inserted = 0, skipped = 0, inherited = 0;
-    var ins = db.prepare("INSERT INTO sharelink_items(link_id,no,ext_key,title,artist,state,task_id,track_id,added_at) VALUES(?,?,?,?,?,?,?,?,?)");
-    var updTrack = db.prepare("UPDATE sharelink_items SET track_id=?, state='done' WHERE link_id=? AND no=?");
-    var detach = db.prepare("UPDATE sharelink_items SET track_id=NULL, state='queued' WHERE link_id=? AND no=?");
-
-    for (var s of srcRows) {
-      var k = norm(s.title) + "|" + norm(s.artist);
-      var hit = byKey.get(k);
-      if (hit) {
-        if (!hasTrack(hit) && hasTrack(s) && isDone(s)) {
-          // 目标那条还没入库，但被合并那条已入库 —— 继承曲库引用，避免重复下载
-          updTrack.run(s.track_id, target, hit.no);
-          hit.track_id = s.track_id; hit.state = "done";
-          inherited++;
-        } else if (hasTrack(hit) && !hasTrack(s) && isDone(s) && isDone(hit)) {
-          // 两者都已入库但源那条丢失了 track_id —— 不动，计数说明即可
-        }
-        skipped++;
-        continue;
-      }
-      nextNo++;
-      ins.run(target, nextNo, s.ext_key || "", s.title, s.artist, s.state === "done" || s.state === "exists" ? "exists" : "queued",
-        null, hasTrack(s) ? s.track_id : null, Date.now());
-      byKey.set(k, { no: nextNo, title: s.title, artist: s.artist, track_id: s.track_id, state: s.state });
-      inserted++;
-    }
-
-    // 目标歌单统计刷新
-    var cnt = db.prepare("SELECT COUNT(*) c FROM sharelink_items WHERE link_id=?").get(target).c;
-    db.prepare("UPDATE sharelinks SET song_count=?, last_sync_at=? WHERE id=?").run(cnt, Date.now(), target);
-
-    // 源歌单：取消未完成任务并删除分享记录（曲库不动）
-    var srcTasks = db.prepare("SELECT task_id FROM sharelink_items WHERE link_id=?").all(source);
-    var pend = db.prepare("UPDATE tasks SET status='cancelled', updated_at=? WHERE id=? AND status IN ('pending','queued')");
-    for (var x of srcTasks) if (x.task_id) pend.run(Date.now(), x.task_id);
-    db.prepare("DELETE FROM sharelink_items WHERE link_id=?").run(source);
-    db.prepare("DELETE FROM sharelinks WHERE id=?").run(source);
-    try { logEvent("share_merge", tgt.title + " <- " + src.title + " inserted=" + inserted + " skipped=" + skipped); } catch (e) {}
-
-    return { ok: true, target_id: target, source_id: source, inserted: inserted, skipped: skipped, inherited: inherited, total: cnt };
   });
 
   // ===== 系统摘要 / 触发扫描 =====

@@ -42,7 +42,9 @@ class RoleNavTest {
             for (r in listOf(
                 Routes.HOME, Routes.SEARCH, Routes.PLAYER, Routes.LYRICS,
                 Routes.HISTORY, Routes.FAVORITE, Routes.SETTINGS,
-                Routes.NET_SEARCH, Routes.TASKS, Routes.SHARE_IMPORT
+                Routes.NET_SEARCH, Routes.TASKS, Routes.SHARE_IMPORT,
+                // v1.16.0：音效 / 车载歌词不是管理功能，两个角色都要能进
+                Routes.EQ, Routes.CAR_LYRICS
             )) assertTrue("$role missing $r", r in routes)
         }
     }

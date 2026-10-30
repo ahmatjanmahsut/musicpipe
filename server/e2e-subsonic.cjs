@@ -15,12 +15,12 @@ const login = async (u, p) => {
 };
 (async () => {
   // --- seed lyrics library (server-side /api/lyrics/search source) ---
-  fs.mkdirSync('server/data/lyrics/by-id', { recursive: true });
+  fs.mkdirSync('/path/to/musicpipe/server/data/lyrics/by-id', { recursive: true });
   const lrc1 = '[00:00.00]晴天 - 周杰伦\n[00:12.50]故事的小黄花\n[00:18.30]从出生那年就飘着\n[00:24.80]童年的荡秋千\n[00:31.20]随记忆一直晃到现在\n';
   const lrc2 = '[00:00.00]稻香 - 周杰伦\n[00:10.00]对这个世界如果你有太多的抱怨\n[00:16.40]跌倒了就不敢继续往前走\n[00:22.80]为什么人要这么的脆弱堕落\n';
-  fs.writeFileSync('server/data/lyrics/晴天 - 周杰伦.lrc', lrc1);
-  fs.writeFileSync('server/data/lyrics/稻香 - 周杰伦.lrc', lrc2);
-  fs.writeFileSync('server/data/lyrics/by-id/subsonic-song-1.lrc', lrc1);
+  fs.writeFileSync('/path/to/musicpipe/server/data/lyrics/晴天 - 周杰伦.lrc', lrc1);
+  fs.writeFileSync('/path/to/musicpipe/server/data/lyrics/稻香 - 周杰伦.lrc', lrc2);
+  fs.writeFileSync('/path/to/musicpipe/server/data/lyrics/by-id/subsonic-song-1.lrc', lrc1);
   console.log('seeded 3 lrc files');
 
   // --- mock subsonic views (App 播放链路) ---

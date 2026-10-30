@@ -13,11 +13,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.musicpipe.player.di.LocalAppContainer
 import com.musicpipe.player.ui.MusicPipeApp
+import com.musicpipe.player.ui.theme.AppStyle
 import com.musicpipe.player.ui.theme.MusicPipeTheme
 
 class MainActivity : ComponentActivity() {
@@ -39,7 +41,12 @@ class MainActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
             val themeMode by container.prefs.themeMode.collectAsState(initial = "system")
-            MusicPipeTheme(themeMode = themeMode) {
+            // v1.13.0：界面风格。collectAsState 的初值是默认风格 —— DataStore 首帧还没回来时
+            // 会短暂用 Editorial 渲染一次，随后切到用户选的风格。这是刻意的：
+            // 读 DataStore 要等一次 IO，为它挡住首帧等于把冷启动白屏还回来（v1.8.0 刚修掉）。
+            val styleId by container.prefs.appStyle.collectAsState(initial = "netease")
+            val appStyle = remember(styleId) { AppStyle.fromId(styleId) }
+            MusicPipeTheme(themeMode = themeMode, appStyle = appStyle) {
                 CompositionLocalProvider(LocalAppContainer provides container) {
                     MusicPipeApp()
                 }

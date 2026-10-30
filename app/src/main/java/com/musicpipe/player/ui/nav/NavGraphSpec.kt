@@ -11,8 +11,8 @@ object NavGraphSpec {
     data class Tab(val route: String, val label: String)
 
     val mainTabs = listOf(
-        Tab(Routes.HOME, "主页"),
-        Tab(Routes.FAVORITE, "我喜欢"),
+        Tab(Routes.HOME, "发现"),
+        Tab(Routes.FAVORITE, "喜欢"),
         Tab(Routes.HISTORY, "历史"),
         Tab(Routes.SETTINGS, "设置")
     )
@@ -21,7 +21,9 @@ object NavGraphSpec {
         val base = mutableSetOf(
             Routes.LOGIN, Routes.HOME, Routes.SEARCH, Routes.PLAYER,
             Routes.LYRICS, Routes.HISTORY, Routes.FAVORITE, Routes.SETTINGS,
-            Routes.NET_SEARCH, Routes.TASKS, Routes.SHARE_IMPORT
+            Routes.NET_SEARCH, Routes.TASKS, Routes.SHARE_IMPORT,
+            // v1.16.0：音效与车载歌词对所有角色开放（不是管理功能）
+            Routes.EQ, Routes.CAR_LYRICS
         )
         if (role == "admin") base.add(Routes.ADMIN_USERS)
         return base

@@ -7,26 +7,9 @@ var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, l
 
 function playTime(sec) { sec = Number(sec) || 0; return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); }
 
-// 下载/暂存目录名（属于"存放在哪"，与专辑无关）
 function pickShareUser(link) {
   var by = String(cfg("share_album_by", "user"));
   return by === "playlist" ? (link.title || "分享歌单") : (link.share_user || link.title || "分享歌单");
-}
-
-/**
- * v1.9.0：写入 tags 的 album 值。
- *
- * 旧行为把 album 直接等同于 folder（= 分享者昵称），导致整个歌单 100+ 首的 album 全变成
- * "demo" 这种伪专辑名：App 的「专辑」页只剩一张巨卡、且与歌单页内容完全重复。
- *
- * 默认返回 null，交给 runner 使用曲目自身的真实专辑（song.album / al.name）；
- * 只有显式配置 share_album_by=playlist 或 user 时才回退到歌单名/分享者名。
- */
-function pickShareAlbum(link) {
-  var by = String(cfg("share_album_by", "track")).toLowerCase();
-  if (by === "playlist") return link.title || "分享歌单";
-  if (by === "user") return link.share_user || link.title || "分享歌单";
-  return null;
 }
 
 // ---------- URL 解析（含分享者 userid）----------
@@ -218,7 +201,7 @@ export async function commitShareLink(id, opts) {
     try { song = JSON.parse(it.song_json || "{}"); } catch (e) {}
     if (!song.id) continue;
     if (it.in_lib) { db.prepare("UPDATE sharelink_items SET state='exists' WHERE link_id=? AND ext_key=?").run(id, it.ext_key); continue; }
-    var share = { folder: folder, album: pickShareAlbum(link), no: it.no, link_id: id, playlist: link.title };
+    var share = { folder: folder, album: folder, no: it.no, link_id: id, playlist: link.title };
     var taskId = enqueueDownload(song, quality, "", share);
     db.prepare("UPDATE sharelink_items SET state='queued', task_id=?, added_at=? WHERE link_id=? AND ext_key=?").run(taskId, Date.now(), id, it.ext_key);
     n++;
@@ -261,7 +244,7 @@ export async function syncShareLink(linkId, opts) {
       exists++;
       continue;
     }
-    var share = { folder: folder, album: pickShareAlbum(info), no: i + 1, link_id: linkId, playlist: info.title };
+    var share = { folder: folder, album: folder, no: i + 1, link_id: linkId, playlist: info.title };
     var taskId = enqueueDownload(s, quality, "", share);
     db.prepare("INSERT OR REPLACE INTO sharelink_items(link_id,ext_key,title,artist,no,task_id,track_id,state,added_at,song_json,in_lib) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(linkId, extKey, s.name, s.singer, i + 1, taskId, "", "queued", Date.now(), JSON.stringify(s), 0);
     added++;

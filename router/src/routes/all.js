@@ -231,7 +231,7 @@ export function registerRoutes(app, broadcast) {
     var mime = ext === "flac" ? "audio/flac" : (ext === "ogg" ? "audio/ogg" : (ext === "m4a" ? "audio/mp4" : "audio/mpeg"));
     var base = String(cfg("webdav_url", "")).replace(/\/+$/, "");
     var relPath = davPath(t.remote_path);
-    var url = base + "/" + relPath.split("/").map(function (s) { return encodeURIComponent(s); }).join("/").replace(/^music%2F/i, "music/");
+    var url = base.replace(/\/+$/, "").replace(/\/webdav$/i, "/webdav/") + "/" + relPath.replace(/^\/+/, "").split("/").map(function (s) { return encodeURIComponent(s); }).join("/");
     var auth = "Basic " + Buffer.from(String(cfg("webdav_user", "")) + ":" + String(cfg("webdav_pass", ""))).toString("base64");
     var headers = { Authorization: auth };
     if (req.headers.range) headers.Range = req.headers.range;

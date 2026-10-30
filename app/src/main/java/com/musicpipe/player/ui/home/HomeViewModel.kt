@@ -16,6 +16,17 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
 
     data class UiState(
         val loading: Boolean = false,
+        /**
+         * v1.15.0：本地快照是否已经读过。
+         *
+         * 冷启动转圈的直接原因：refresh() 在网络请求**之前**就无条件把 loading 置 true，
+         * 而这时快照还没读出来（另一条协程在跑），hasContent 仍为 false →
+         * 首页门（loading && !hasContent）必然先命中，计数器一直转到网络返回。
+         *
+         * 现在用这个字段区分"还没看过本地"和"本地已空、在等网络"：
+         * 只有前者才允许显示循环计数器；后者显示静止的同步态。
+         */
+        val bootstrapped: Boolean = false,
         /** Full router library, newest first (GET /api/v1/library). */
         val songs: List<Song> = emptyList(),
         /** One section per share playlist, in share-creation order. */
@@ -50,6 +61,8 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         val playlistFolders: List<HomeFolderGrid> = emptyList(),
         /** 专辑轴缓存的表格。 */
         val albumFolders: List<HomeFolderGrid> = emptyList(),
+        /** 艺人轴缓存，与歌单/专辑一样在刷新时预计算，滚动期零分组。 */
+        val artistFolders: List<HomeFolderGrid> = emptyList(),
         /** 歌单管理模式：网格上叠加删除 / 合并操作。 */
         val playlistManageMode: Boolean = false,
         /** 批量选中的歌单 id（share ids）。 */
@@ -98,9 +111,18 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         // 网络结果回来后由 refresh() 覆盖。没有快照时行为与以前完全一致（转圈等网络）。
         viewModelScope.launch {
             val cached = container.songRepository.cachedLibrary()
-            if (cached.isNotEmpty() && _state.value.songs.isEmpty()) {
-                _state.value = withFolders(_state.value.copy(songs = cached))
-            }
+            // 无论有没有快照，读完就把 bootstrapped 置 true —— 这一瞬间之后，
+            // 我们"知道本地有什么"了，就没必要再用循环计数器挡屏：
+            // 有快照直接渲染（loading 也置回 false，避免误显示下拉刷新指示器），
+            // 没快照则交给静止的同步态。
+            _state.value = withFolders(
+                _state.value.copy(
+                    songs = if (cached.isNotEmpty() && _state.value.songs.isEmpty()) cached
+                    else _state.value.songs,
+                    bootstrapped = true,
+                    loading = if (cached.isNotEmpty()) false else _state.value.loading
+                )
+            )
         }
         refresh()
     }
@@ -110,10 +132,33 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
      * "no collections" so the library still renders. Results are merged with copy()
      * (not a fresh UiState) so manageMode/selected survive refreshes that complete
      * while the user is managing, and a loading guard dedupes resume/pull triggers.
+     *
+     * @param showIndicator v1.15.0：是否为这次刷新显示加载指示器。
+     *
+     * LifecycleResumeEffect 每次回到前台都会调 refresh()，而 refresh 一进来就把
+     * loading 置 true —— 首页的 PullToRefreshBox 用 state.loading && hasContent 当
+     * isRefreshing，于是每次切回 App 顶部都会转一个刷新圈，即使数据是几秒前刚拉的。
+     * 回前台属于顺手对一下，用 silent 刷新：照样拉数据、失败也不弹错误条，
+     * 但不动 loading，界面上什么都不会闪。
      */
-    fun refresh() {
-        if (_state.value.loading) return
-        _state.value = _state.value.copy(loading = true, error = null)
+    /** v1.15.0：silent 刷新不置 loading，原来的 loading guard 就管不到它，另立一个在途标记。 */
+    private var refreshInFlight = false
+
+    /** 上次成功拿到曲库的时刻（uptimeMillis）。用于回前台时的节流。 */
+    private var lastLoadedAt = 0L
+
+    fun refresh(showIndicator: Boolean = true) {
+        if (refreshInFlight || _state.value.loading) return
+        // 回前台的 silent 刷新做节流：数据是十几秒内刚拉的就没必要再打一次接口。
+        // 用户反复切出切回时（看歌词、回微信），这条会省掉大量无谓请求与重组。
+        if (!showIndicator && lastLoadedAt > 0L) {
+            val age = android.os.SystemClock.elapsedRealtime() - lastLoadedAt
+            if (age < RESUME_REFRESH_MIN_AGE_MS) return
+        }
+        refreshInFlight = true
+        if (showIndicator) {
+            _state.value = _state.value.copy(loading = true, error = null)
+        }
         viewModelScope.launch {
             val sharesDeferred = async {
                 runCatching { container.netRepository.shareList() }.getOrDefault(emptyList())
@@ -139,6 +184,7 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
                         )
                     )
                 )
+                lastLoadedAt = android.os.SystemClock.elapsedRealtime()
                 // v1.7.0 预加载：曲库一到位就在后台把封面与歌词喂进缓存。
                 // 顺序按界面里的出现顺序（分享歌单在前，然后曲库），先预热的先被看到。
                 val ordered = _state.value.folders.flatMap { it.folder.songs }.distinctBy { it.id }
@@ -148,10 +194,14 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
                     songIds = ordered.map { it.id }
                 )
             } catch (t: Throwable) {
+                // silent 刷新（回前台自动触发）失败时保持界面原样：用户没主动要求刷新，
+                // 弹一条错误横幅只会让人以为出事了；有内容的界面继续显示旧数据即可。
                 _state.value = _state.value.copy(
                     loading = false,
-                    error = t.message ?: "加载失败"
+                    error = if (showIndicator) (t.message ?: "加载失败") else _state.value.error
                 )
+            } finally {
+                refreshInFlight = false
             }
         }
     }
@@ -165,12 +215,18 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     private fun withFolders(s: UiState): UiState {
         val playlists = buildFolderGrid(HomeAxis.PLAYLISTS, s.collections, s.songs)
         val albums = buildFolderGrid(HomeAxis.ALBUMS, s.collections, s.songs)
-        val axis = HomeFolders.resolveAxis(s.axis, playlists.isNotEmpty(), albums.isNotEmpty())
+        val artists = buildFolderGrid(HomeAxis.ARTISTS, s.collections, s.songs)
+        val axis = HomeFolders.resolveAxis(s.axis, playlists.isNotEmpty(), albums.isNotEmpty(), artists.isNotEmpty())
         return s.copy(
             axis = axis,
             playlistFolders = playlists,
             albumFolders = albums,
-            folders = if (axis == HomeAxis.PLAYLISTS) playlists else albums
+            artistFolders = artists,
+            folders = when (axis) {
+                HomeAxis.PLAYLISTS -> playlists
+                HomeAxis.ALBUMS -> albums
+                HomeAxis.ARTISTS -> artists
+            }
         )
     }
 
@@ -185,7 +241,11 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         if (s.axis == axis) return
         _state.value = s.copy(
             axis = axis,
-            folders = if (axis == HomeAxis.PLAYLISTS) s.playlistFolders else s.albumFolders,
+            folders = when (axis) {
+                HomeAxis.PLAYLISTS -> s.playlistFolders
+                HomeAxis.ALBUMS -> s.albumFolders
+                HomeAxis.ARTISTS -> s.artistFolders
+            },
             openFolderId = null,
             manageMode = false,
             selected = emptySet(),
@@ -402,6 +462,9 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     companion object {
+        /** 回前台自动刷新之间的最小间隔：数据比这更新就不重复请求。 */
+        const val RESUME_REFRESH_MIN_AGE_MS = 20_000L
+
         fun factory(container: AppContainer) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T = HomeViewModel(container) as T

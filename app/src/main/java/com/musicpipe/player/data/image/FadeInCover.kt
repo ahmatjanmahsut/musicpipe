@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -63,8 +64,12 @@ fun FadeInCover(
         return
     }
     val context = LocalContext.current
-    val painter = rememberAsyncImagePainter(
-        model = ImageRequest.Builder(context)
+    // v1.14.0 性能修复（滚动卡顿）：把 ImageRequest 记住。
+    // 旧写法在组合期直接 new ImageRequest.Builder(...).build() —— 每次重组都新建一个
+    // 请求对象（Builder + 若干 key 字符串 + 内部 map），滚动时一屏 20+ 张封面
+    // 每帧各造一个。CachePolicy/尺寸这些参数对同一 model 是常量，没必要每帧重建。
+    val request = remember(model, dpSize, context) {
+        ImageRequest.Builder(context)
             .data(model)
             // 仅作解码采样提示：让 Coil 解码到 ≈dpSize 的像素，而不是封面原图分辨率。
             .size(dpSize.coerceAtLeast(1))
@@ -72,7 +77,8 @@ fun FadeInCover(
             .memoryCachePolicy(CachePolicy.ENABLED)
             .diskCachePolicy(CachePolicy.ENABLED)
             .build()
-    )
+    }
+    val painter = rememberAsyncImagePainter(model = request)
     val loaded = painter.state is AsyncImagePainter.State.Success
     Box(placeholder, contentAlignment = Alignment.Center) {
         if (!loaded) {

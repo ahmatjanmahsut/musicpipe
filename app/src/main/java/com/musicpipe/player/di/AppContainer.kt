@@ -7,6 +7,8 @@ import com.musicpipe.player.data.remote.ApiClientFactory
 import com.musicpipe.player.data.remote.AuthTokens
 import com.musicpipe.player.data.remote.ServerConfig
 import com.musicpipe.player.data.repo.AuthRepository
+import com.musicpipe.player.data.repo.CarLyricsRepository
+import com.musicpipe.player.data.repo.EqRepository
 import com.musicpipe.player.data.repo.FavoriteRepository
 import com.musicpipe.player.data.repo.HistoryRepository
 import com.musicpipe.player.data.repo.LyricsRepository
@@ -16,6 +18,8 @@ import com.musicpipe.player.data.repo.SongRepository
 import com.musicpipe.player.data.repo.UpdateRepository
 import com.musicpipe.player.data.repo.UserRepository
 import com.musicpipe.player.media.MusicPlayerController
+import com.musicpipe.player.media.car.OutputDeviceMonitor
+import com.musicpipe.player.media.eq.EqController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,6 +61,18 @@ class AppContainer(private val context: Context) {
     /** v1.7.0：封面/歌词预热器（曲库加载后由 HomeViewModel 触发）。 */
     val prewarmer = com.musicpipe.player.data.image.Prewarmer(context, lyricsRepository)
 
+    /**
+     * v1.16.0：均衡器 + 输出设备监视。
+     *
+     * 顺序有依赖：EqRepository 要读输出设备状态来做"建议预设"，所以监视器先建。
+     * 监视器只做 AudioDeviceCallback 注册（系统回调，成本可忽略），
+     * 放在 AppContainer 而不是 Service 里，界面上"当前输出：蓝牙车机"才不会要等播放开始才出现。
+     */
+    val outputMonitor = OutputDeviceMonitor(context)
+    val eqController = EqController()
+    val eqRepository = EqRepository(prefs, eqController, outputMonitor, appScope)
+    val carLyricsRepository = CarLyricsRepository(prefs, outputMonitor, appScope)
+
     val playerController = MusicPlayerController(context, playerScope)
     val playerRepository = PlayerRepository(playerController, historyRepository, appScope)
 
@@ -77,6 +93,8 @@ class AppContainer(private val context: Context) {
         appScope.launch { AuthTokens.set(prefs.authTokenFlow.value) }
         appScope.launch { prefs.loadAuthToken().let { AuthTokens.set(it) } }
         appScope.launch { prefs.loadDownloadQuality() }
+        // v1.16.0：开始监视输出设备（蓝牙车机/耳机判定 + EQ 推荐都靠它）。
+        runCatching { outputMonitor.start() }
         // v1.8.0：**不再**在这里绑 MediaController。
         // 绑定会拉起 PlaybackService.onCreate -> 创建 ExoPlayer，是冷启动主线程上最贵的一步；
         // 而它在启动时毫无用处（用户还没点播放）。改由 MainActivity 在首帧后再调用

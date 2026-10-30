@@ -1,173 +1,212 @@
 package com.musicpipe.player.ui.theme
 
+import android.provider.Settings
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
 
 /**
- * v1.10.0：补齐 Material3 语义色。
+ * 把当前风格的调色板铺进 M3 ColorScheme。
  *
- * 之前只设了 15 个 role，其余（surfaceContainer / surfaceContainerLow / secondaryContainer /
- * tertiary / outline / inverseSurface / surfaceBright / surfaceDim）全部落回 M3 **紫色基线**，
- * 于是 DropdownMenu、FilterChip、Checkbox 未选中态、Snackbar 等在 Dso 红白配色里显出一层紫。
- * 这里把用得到的 role 一次补全。
+ * 关键：**不用**动态取色（Material You 的 wallpaper colors）。理由：
+ * 用户选的是"Material You 风格"，期望看到的是 Google 官方那套紫调 baseline；
+ * 如果取壁纸色，同一台机器上换壁纸 App 就变色，风格就不再是"一种设计"了。
+ * 想接动态色以后可以加一个开关，这里不做。
  */
-private val LightColors = lightColorScheme(
-    primary = DsoColors.AppRed,
-    onPrimary = DsoColors.PageWhite,
-    primaryContainer = DsoColors.AppRed.copy(alpha = 0.12f),
-    onPrimaryContainer = DsoColors.AppRed,
-    inversePrimary = DsoColors.AppRed.copy(alpha = 0.35f),
-    secondary = DsoColors.HighlightBlue,
-    onSecondary = DsoColors.PageWhite,
-    secondaryContainer = DsoColors.HighlightBlue.copy(alpha = 0.12f),
-    onSecondaryContainer = DsoColors.HighlightBlue,
-    tertiary = DsoColors.TextSecondary,
-    onTertiary = DsoColors.PageWhite,
-    background = DsoColors.PageBg,
-    onBackground = DsoColors.TextPrimary,
-    surface = DsoColors.PageWhite,
-    onSurface = DsoColors.TextPrimary,
-    surfaceVariant = DsoColors.InputBg,
-    onSurfaceVariant = DsoColors.TextSecondary,
-    surfaceContainerLowest = DsoColors.PageWhite,
-    surfaceContainerLow = DsoColors.PageWhite,
-    surfaceContainer = DsoColors.PageBg,
-    surfaceContainerHigh = DsoColors.PageWhite,
-    surfaceContainerHighest = DsoColors.InputBg,
-    surfaceBright = DsoColors.PageWhite,
-    surfaceDim = DsoColors.PageBg,
-    outline = DsoColors.TextHint,
-    outlineVariant = DsoColors.Divider,
-    error = DsoColors.AppRed,
-    onError = DsoColors.PageWhite,
-    inverseSurface = DsoColors.TextPrimary,
-    inverseOnSurface = DsoColors.PageWhite
-)
-
-private val DarkColors = darkColorScheme(
-    primary = DsoColors.AppRed,
-    onPrimary = DsoColors.OnRedDark,
-    primaryContainer = DsoColors.AppRed.copy(alpha = 0.20f),
-    onPrimaryContainer = DsoColors.AppRed,
-    inversePrimary = DsoColors.AppRed.copy(alpha = 0.35f),
-    secondary = DsoColors.HighlightBlue,
-    onSecondary = DsoColors.PageWhite,
-    secondaryContainer = DsoColors.HighlightBlue.copy(alpha = 0.20f),
-    onSecondaryContainer = DsoColors.HighlightBlue,
-    tertiary = DsoColors.DarkTextSecondary,
-    onTertiary = DsoColors.DarkBg,
-    background = DsoColors.DarkBg,
-    onBackground = DsoColors.DarkTextPrimary,
-    surface = DsoColors.DarkSurface,
-    onSurface = DsoColors.DarkTextPrimary,
-    surfaceVariant = DsoColors.DarkInputBg,
-    onSurfaceVariant = DsoColors.DarkTextSecondary,
-    surfaceContainerLowest = DsoColors.DarkBg,
-    surfaceContainerLow = DsoColors.DarkSurfaceLow,
-    surfaceContainer = DsoColors.DarkSurface,
-    surfaceContainerHigh = DsoColors.DarkSurfaceHigh,
-    surfaceContainerHighest = DsoColors.DarkInputBg,
-    surfaceBright = DsoColors.DarkInputBg,
-    surfaceDim = DsoColors.DarkBg,
-    outline = DsoColors.DarkOutline,
-    outlineVariant = DsoColors.DarkDivider,
-    error = DsoColors.AppRed,
-    onError = DsoColors.PageWhite,
-    inverseSurface = DsoColors.DarkTextPrimary,
-    inverseOnSurface = DsoColors.DarkBg
-)
-
-/**
- * v1.10.0 排版基线。
- *
- * 之前全 App 有 22 处硬编码 `fontSize = N.sp`（HomeScreen 18 处、LoginScreen 2 处、
- * TasksScreen / PlayerScreen / LyricsScreen 各 1 处），而 Typography 从未被覆写 ——
- * 结果是**用户把系统字号调大时，这些文字不会跟着放大**，页面出现大小混排。
- * 这里定义一套和 Dso 视觉一致的缩放基线，并把关键档位按 1.15x 抬一档，
- * 让 "把字调大" 在所有页面一致生效。
- */
-private fun dsoTypography(): Typography {
-    val base = Typography()
-    return base.copy(
-        displaySmall = base.displaySmall.copy(fontSize = 34.sp, fontWeight = FontWeight.Bold),
-        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        bodyLarge = base.bodyLarge.copy(fontSize = 15.sp),
-        bodyMedium = base.bodyMedium.copy(fontSize = 14.sp),
-        bodySmall = base.bodySmall.copy(fontSize = 13.sp),
-        labelLarge = base.labelLarge.copy(fontSize = 14.sp),
-        labelMedium = base.labelMedium.copy(fontSize = 12.sp),
-        labelSmall = base.labelSmall.copy(fontSize = 11.sp)
+private fun scheme(dark: Boolean) = if (dark) {
+    darkColorScheme(
+        primary = AwwColors.Accent,
+        onPrimary = AwwColors.OnAccent,
+        primaryContainer = AwwColors.AccentSoft,
+        onPrimaryContainer = AwwColors.Ink,
+        inversePrimary = AwwColors.Accent,
+        secondary = AwwColors.Ink2,
+        onSecondary = AwwColors.Paper,
+        secondaryContainer = AwwColors.Paper2,
+        onSecondaryContainer = AwwColors.Ink,
+        tertiary = AwwColors.Ink2,
+        onTertiary = AwwColors.Paper,
+        background = AwwColors.Paper,
+        onBackground = AwwColors.Ink,
+        surface = AwwColors.Paper,
+        onSurface = AwwColors.Ink,
+        surfaceVariant = AwwColors.Paper2,
+        onSurfaceVariant = AwwColors.Ink2,
+        surfaceContainerLowest = AwwColors.Paper,
+        surfaceContainerLow = AwwColors.Paper,
+        surfaceContainer = AwwColors.Paper2,
+        surfaceContainerHigh = AwwColors.Paper2,
+        surfaceContainerHighest = AwwColors.Paper2,
+        surfaceBright = AwwColors.Paper2,
+        surfaceDim = AwwColors.Paper,
+        outline = AwwColors.Line,
+        outlineVariant = AwwColors.Line,
+        error = AwwColors.Accent,
+        onError = AwwColors.OnAccent,
+        inverseSurface = AwwColors.Ink,
+        inverseOnSurface = AwwColors.Paper,
+        scrim = Color(0xCC000000)
+    )
+} else {
+    lightColorScheme(
+        primary = AwwColors.Accent,
+        onPrimary = AwwColors.OnAccent,
+        primaryContainer = AwwColors.AccentSoft,
+        onPrimaryContainer = AwwColors.Accent,
+        inversePrimary = AwwColors.Accent,
+        secondary = AwwColors.Ink2Light,
+        onSecondary = AwwColors.PaperLight,
+        secondaryContainer = AwwColors.Paper2Light,
+        onSecondaryContainer = AwwColors.InkLight,
+        tertiary = AwwColors.Ink2Light,
+        onTertiary = AwwColors.PaperLight,
+        background = AwwColors.PaperLight,
+        onBackground = AwwColors.InkLight,
+        surface = AwwColors.PaperLight,
+        onSurface = AwwColors.InkLight,
+        surfaceVariant = AwwColors.Paper2Light,
+        onSurfaceVariant = AwwColors.Ink2Light,
+        surfaceContainerLowest = AwwColors.PaperLight,
+        surfaceContainerLow = AwwColors.PaperLight,
+        surfaceContainer = AwwColors.Paper2Light,
+        surfaceContainerHigh = AwwColors.Paper2Light,
+        surfaceContainerHighest = AwwColors.Paper2Light,
+        surfaceBright = AwwColors.PaperLight,
+        surfaceDim = AwwColors.Paper2Light,
+        outline = AwwColors.LineLight,
+        outlineVariant = AwwColors.LineLight,
+        error = AwwColors.Accent,
+        onError = AwwColors.OnAccent,
+        inverseSurface = AwwColors.InkLight,
+        inverseOnSurface = AwwColors.PaperLight,
+        scrim = Color(0xCC000000)
     )
 }
 
 /**
- * v1.10.0：少量"离散档位"的文字样式。
+ * 主题相关的"非 M3 语义"颜色。
  *
- * M3 Typography 的 15 个档位里没有 9sp / 18sp 这类尺寸，但卡片角标与歌词高亮行确实需要。
- * 与其散落在各页写 `fontSize = 9.sp`（22 处，且不跟系统字号缩放），
- * 同样收敛到这里，跟 Typography 一起做统一缩放源。
+ * 只保留几个真正需要按主题区分的位置：封面占位（禁灰块，见 §8 的 LQIP 要求）、
+ * CD 圆盘、强调色之上的文字。其余一律走 [MaterialTheme.colorScheme]。
  */
-object DsoTextStyles {
-    /** 卡片左上角"歌单/专辑"角标。 */
-    val Badge = TextStyle(fontSize = 9.sp, lineHeight = 12.sp, fontWeight = FontWeight.Medium)
-    /** 歌词当前行。 */
-    val LyricActive = TextStyle(fontSize = 18.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold)
-    /** 歌词普通行。 */
-    val LyricIdle = TextStyle(fontSize = 15.sp, lineHeight = 24.sp, fontWeight = FontWeight.Normal)
-}
-
-/**
- * v1.10.0：主题相关的"非 M3 语义"颜色（封面占位、CD 圆盘、红底字色）。
- *
- * M3 的 ColorScheme 没有对应 role，之前这些值被硬编码成浅色常量写在 Composable 里，
- * 深色主题直接失效。用 CompositionLocal 提供，页面里读 `LocalDsoPalette.current.coverPlaceholder`。
- */
-@Immutable
+@androidx.compose.runtime.Immutable
 data class DsoPalette(
     val coverPlaceholder: Color,
     val cdPlate: Color,
-    val onRed: Color
+    val onRed: Color,
+    val accent: Color,
+    val line: Color,
+    val ink3: Color
 )
 
-private val LightPalette = DsoPalette(
-    coverPlaceholder = DsoColors.CoverPlaceholderLight,
-    cdPlate = DsoColors.CdPlateLight,
-    onRed = DsoColors.OnRedLight
-)
+private fun paletteOf(dark: Boolean): DsoPalette {
+    val p = StyleState.spec.palette(dark)
+    return DsoPalette(
+        coverPlaceholder = p.paper2,
+        cdPlate = p.paper2,
+        onRed = p.onAccent,
+        accent = p.accent,
+        line = p.line,
+        ink3 = p.ink3
+    )
+}
 
-private val DarkPalette = DsoPalette(
-    coverPlaceholder = DsoColors.CoverPlaceholderDark,
-    cdPlate = DsoColors.CdPlateDark,
-    onRed = DsoColors.OnRedDark
-)
+val LocalDsoPalette = androidx.compose.runtime.staticCompositionLocalOf {
+    DsoPalette(
+        coverPlaceholder = Color(0xFFEAE7E0), cdPlate = Color(0xFFEAE7E0),
+        onRed = Color(0xFFFFFFFF), accent = Color(0xFFFF4D2E),
+        line = Color(0x24101012), ink3 = Color(0x6E101012)
+    )
+}
 
-val LocalDsoPalette = staticCompositionLocalOf { LightPalette }
-
-/** themeMode: "system" | "light" | "dark" (DataStore theme_mode, docs/01 §5). */
+/**
+ * 读取系统的"移除动画"开关（DESIGN.md §5 的 prefers-reduced-motion 等价物）。
+ *
+ * Settings.Global.ANIMATOR_DURATION_SCALE == 0 即用户在无障碍设置里关掉了动画。
+ */
 @Composable
-fun MusicPipeTheme(themeMode: String = "system", content: @Composable () -> Unit) {
+private fun rememberReduceMotion(): Boolean {
+    val ctx = LocalContext.current
+    return remember(ctx) {
+        val v = runCatching {
+            Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        }.getOrDefault(1f)
+        v == 0f
+    }
+}
+
+/**
+ * App 主题入口。
+ *
+ * @param themeMode "system" | "light" | "dark"（DataStore theme_mode）
+ * @param appStyle  用户选的界面风格（DataStore app_style），见 [AppStyle]
+ *
+ * 风格切换的机制：先把选中的风格写进 [StyleState]，再用 `key(appStyle)` 重建整棵子树。
+ * 为什么必须 key()：token 现在是普通 getter（不是 snapshot state），Compose 不会因为它们
+ * 变化而自动重组。key() 让整棵界面在换风格时丢弃旧组合、按新规格重新构建 —— 这正好是
+ * 我们想要的语义（换的是整套设计，不是某个值），而且一次性、无残留。
+ *
+ * 顺带处理 system 模式下明暗切换：isDark 也进 key，系统切换时会重建。
+ */
+@Composable
+fun MusicPipeTheme(
+    themeMode: String = "system",
+    appStyle: AppStyle = AppStyle.NETEASE,
+    content: @Composable () -> Unit
+) {
     val dark = when (themeMode) {
         "light" -> false
         "dark" -> true
         else -> isSystemInDarkTheme()
     }
-    CompositionLocalProvider(LocalDsoPalette provides if (dark) DarkPalette else LightPalette) {
-        MaterialTheme(
-            colorScheme = if (dark) DarkColors else LightColors,
-            typography = dsoTypography(),
-            content = content
-        )
+    val reduceMotion = rememberReduceMotion()
+
+    // 在组合任何子项之前同步好全局规格，子项里的 token getter 才能读到正确的值。
+    // 这不是副作用写到 UI 状态：StyleState 只是一张只读规格表，写入后本帧立即生效。
+    StyleState.apply(appStyle, dark)
+
+    key(appStyle, dark) {
+        val type = rememberAwwType()
+        CompositionLocalProvider(
+            LocalDsoPalette provides paletteOf(dark),
+            LocalAwwType provides type,
+            LocalReduceMotion provides reduceMotion
+        ) {
+            MaterialTheme(
+                colorScheme = scheme(dark),
+                typography = m3Typography(type),
+                content = content
+            )
+        }
     }
 }
+
+/** 便捷读取当前的流式字号表：`AwwTheme.type.display`。 */
+object AwwTheme {
+    val type: AwwType
+        @Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalAwwType.current
+
+    /** 当前风格的形态开关（按钮/分隔线/噪点等）。 */
+    val chrome: StyleChrome get() = StyleState.spec.chrome
+
+    /** 当前风格枚举，设置页用来显示选中项。 */
+    val style: AppStyle get() = StyleState.spec.style
+}
+
+/** 读取当前风格的一个色值，仅供极少数无法走 MaterialTheme 的地方。 */
+val AwwThemePalette: StylePalette
+    get() = StyleState.palette
+
+// 抑制未使用告警：FontWeight 供外部按需引用
+@Suppress("unused")
+private val fwRef: FontWeight = FontWeight.Normal

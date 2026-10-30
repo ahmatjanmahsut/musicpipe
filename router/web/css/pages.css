@@ -1,0 +1,297 @@
+/* ==========================================================================
+   MusicPipe 控制台 · pages.css  （v1.16.1 · 按页面组织的版式）
+   只做布局与页面级微调，控件外观一律在 components.css。
+   ========================================================================== */
+
+/* ==========================================================================
+   登录 / 初始化
+   ========================================================================== */
+.page--login {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-8) var(--gutter);
+  gap: 0;
+}
+.login__bg { display: none; }          /* 旧的巨型水印背景，新版不要 */
+.login__marquee, .login__plat { display: none; }
+
+.login__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  align-items: center;
+  gap: var(--space-16);
+  width: min(940px, 100%);
+}
+.login__scene { display: flex; flex-direction: column; gap: var(--space-3); }
+.login__hero { font-size: var(--text-h1); }
+.login__pwd { position: relative; display: flex; align-items: center; }
+.login__pwd .inp { padding-right: 52px; }
+.login__eye { position: absolute; right: 2px; }
+
+.login__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-3);
+  box-shadow: var(--elev-1);
+}
+.login__submit { width: 100%; }
+
+@media (max-width: 899px) {
+  .login__grid { grid-template-columns: 1fr; gap: var(--space-6); width: min(440px, 100%); }
+  .login__scene { text-align: left; }
+}
+
+/* ==========================================================================
+   概览
+   ========================================================================== */
+.dash__body { gap: var(--space-6); }
+
+.dash__stats {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-4);
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-3);
+  min-width: 0;
+}
+.stat--hero { grid-column: span 6; }
+.stat--tile { grid-column: span 2; }
+.stat--disk {
+  grid-column: span 12;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-6);
+}
+.stat--disk .stat__num { font-size: 1.5rem; }
+.stat--disk .disk__bar { flex: 1 1 260px; margin: 0; }
+.stat--disk .stat__sub { flex: 0 0 auto; }
+.stat__lbl { color: var(--color-ink-3); font-size: var(--text-caption); }
+.stat__num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 2rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--color-ink);
+}
+.stat--hero .stat__num { font-size: 2.75rem; }
+.stat__sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-ink-2);
+  font-size: var(--text-caption);
+}
+
+.dash__lower {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--space-6);
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.dash__services,
+.dash__feed {
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-3);
+  min-width: 0;
+}
+.dash__feed .feed { max-height: 340px; overflow: auto; }
+
+.feed__row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-line);
+  font-size: var(--text-caption);
+  color: var(--color-ink-2);
+}
+.feed__row:first-child { border-top: 0; }
+.feed__kind { color: var(--color-ink); font-weight: 500; }
+.feed__detail { color: var(--color-ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 1023px) {
+  .stat--hero { grid-column: span 12; }
+  .stat--tile { grid-column: span 4; }
+  .stat--disk { grid-column: span 12; }
+  .dash__lower { grid-template-columns: 1fr; }
+}
+@media (max-width: 599px) {
+  /* 手机上所有统计卡整行铺满：避免出现"第三张卡孤零零占半行" */
+  .stat, .stat--hero, .stat--tile, .stat--disk { grid-column: span 12; }
+  .stat { padding: var(--space-4); }
+  .stat--hero .stat__num { font-size: 2rem; }
+}
+
+/* ==========================================================================
+   搜索
+   ========================================================================== */
+.search__kw { flex: 1 1 320px; min-width: 200px; }
+.search__kw { flex: 1 1 100%; }
+.search__q {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  width: auto;
+}
+.search__q .field__lb { white-space: nowrap; }
+.search__tip { color: var(--color-ink-3); }
+.search__pager { margin-top: var(--space-2); }
+
+/* ==========================================================================
+   下载任务
+   ========================================================================== */
+.cell-progress { white-space: nowrap; }
+
+/* ==========================================================================
+   音乐库
+   ========================================================================== */
+.tracks__q { flex: 1 1 280px; min-width: 180px; }
+.modal__audio { display: flex; flex-direction: column; gap: var(--space-2); }
+
+/* ==========================================================================
+   分享歌单
+   ========================================================================== */
+.shares__url { flex: 1 1 360px; min-width: 220px; }
+.shares__sub { margin-top: 4px; }
+.shares__marq { display: none; }
+
+.pv__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-line);
+}
+.pv__user-f { flex: 1 1 200px; }
+.pv__q-f { width: 150px; }
+.pv__scroll { max-height: 46svh; overflow: auto; border: 1px solid var(--color-line); border-radius: var(--radius-2); }
+.pv__scroll .mp-table thead th { background: var(--color-surface-raised); }
+
+/* ==========================================================================
+   整理入库
+   ========================================================================== */
+.org__tpl { flex: 1 1 320px; font-family: var(--font-mono); font-size: var(--text-small); }
+.org__preview { color: var(--color-ink); }
+
+/* ==========================================================================
+   音源管理
+   ========================================================================== */
+.src__name { width: 200px; }
+.src__result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-3);
+  font-size: var(--text-small);
+}
+.src__steps { color: var(--color-ink-2); word-break: break-word; }
+
+/* ==========================================================================
+   系统设置
+   ========================================================================== */
+.set__body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+  gap: var(--space-4);
+}
+.set__group { display: flex; flex-direction: column; gap: var(--space-3); }
+.set__group .sect__h { margin-bottom: 0; }
+/* 保存条不做 sticky：它曾经压住 WebDAV 卡片最后一个输入框 */
+.set__save { grid-column: 1 / -1; padding: var(--space-3) 0 0; }
+.set__g-style { grid-column: 1 / -1; }
+
+/* ==========================================================================
+   App 发布（旧版是横向 pin 墙；新版为响应式卡片网格，无需 JS）
+   ========================================================================== */
+.rel-pin { display: block; }
+.rel-wall { display: block; }
+.rel-wall__track {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+.rel__marq { display: none; }
+
+.rel-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-3);
+}
+.rel-card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.rel-card__idx { color: var(--color-ink-3); }
+.rel-card__ver {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--color-ink);
+}
+.rel-card__code { color: var(--color-ink-3); }
+.rel-card__meta { display: grid; gap: 6px; margin: 0; }
+.rel-card__meta > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: 6px;
+  border-top: 1px solid var(--color-line);
+}
+.rel-card__meta dt { color: var(--color-ink-3); font-size: var(--text-caption); }
+.rel-card__meta dd {
+  margin: 0;
+  color: var(--color-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+.rel-card__log {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--color-ink-2);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+  white-space: pre-line;
+}
+.rel-card__foot { display: flex; gap: var(--space-2); margin-top: auto; }
+
+/* ==========================================================================
+   用户管理
+   ========================================================================== */
+.mp-table .tag { margin: 0; }

@@ -43,7 +43,7 @@
 仓库结构（交付物）：
 
 ~~~
-
+/path/to/musicpipe/
 ├── docs/            # 本契约 + 任务树 + UI 规范 + 开发报告
 ├── server/          # musicpipe-appservice（Node20+Fastify+TS+SQLite）
 │   ├── src/  (index.ts config.ts db/ routes/ services/ mock/)

@@ -1,6 +1,8 @@
 package com.musicpipe.player.ui.search
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,85 +12,128 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musicpipe.player.di.LocalAppContainer
-import com.musicpipe.player.ui.components.AppTextField
-import com.musicpipe.player.ui.components.EmptyBlock
-import com.musicpipe.player.ui.components.ErrorBanner
 import com.musicpipe.player.ui.components.LoadingBlock
 import com.musicpipe.player.ui.components.SongListItem
-import com.musicpipe.player.ui.theme.DsoColors
-import com.musicpipe.player.ui.theme.DsoShapes
+import com.musicpipe.player.ui.design.AwwEmpty
+import com.musicpipe.player.ui.design.AwwLabel
+import com.musicpipe.player.ui.design.AwwMono
+import com.musicpipe.player.ui.design.AwwRule
+import com.musicpipe.player.ui.theme.AwwColors
+import com.musicpipe.player.ui.theme.AwwSpace
+import com.musicpipe.player.ui.theme.AwwTheme
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
-/** Search page (docs/01 §4 search3.view): rounded #F5F5F5 input, DsoMusic style. */
+/**
+ * 曲库搜索（v1.12.0 按 DESIGN.md 重构）。
+ *
+ * 设计取舍：
+ * - 输入框不用 M3 的填充胶囊（规范禁大圆角 + 灰底药丸），改成"下划线式"编辑排版：
+ *   1dp 底边 + mono 前缀编号 + 无容器。这样焦点态只需把底边换成强调色，符合 §6 焦点态。
+ * - 结果列表沿用 [SongListItem]（已含 1dp 细线分隔），页面本身不加任何卡片。
+ *
+ * 性能约定（v1.4.0 起，勿破坏）：只订阅当前曲目 id，500ms 位置心跳不得带动列表重组。
+ */
 @Composable
 fun SearchScreen(onBack: () -> Unit) {
     val container = LocalAppContainer.current
     val vm: SearchViewModel = viewModel(factory = SearchViewModel.factory(container))
     val state by vm.state.collectAsStateWithLifecycle()
-    // Only the current song id (distinct): the 500ms position ticks must not
-    // recompose this list while playing (v1.4.0 jank fix).
     val currentSongId by remember {
         container.playerRepository.state
             .map { it.currentSong?.id }
             .distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = null)
 
-    Column(Modifier.fillMaxSize()) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AwwSpace.s6, vertical = AwwSpace.s2),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = MaterialTheme.colorScheme.onSurface)
-            }
-            AppTextField(
-                value = state.query,
-                onValueChange = vm::onQueryChange,
-                placeholder = { Text("搜索歌曲、歌手") },
-                leadingIcon = { Icon(Icons.Filled.Search, null) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { vm.search(state.query) }),
-                shape = DsoShapes.Pill,
-                modifier = Modifier.weight(1f)
+            Text(
+                text = "‹",
+                style = AwwTheme.type.h3,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .padding(end = AwwSpace.s4)
+                    .clickable(onClick = onBack)
             )
+            AwwLabel(text = "SEARCH", color = AwwColors.Ink3)
+            Spacer(Modifier.weight(1f))
+            AwwMono(text = "02", color = AwwColors.Ink3)
         }
+        AwwRule()
+
+        // 下划线输入框
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AwwSpace.s6, vertical = AwwSpace.s4),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AwwMono(text = ">", color = AwwColors.Accent)
+            Box(Modifier.weight(1f).padding(start = AwwSpace.s3)) {
+                if (state.query.isEmpty()) {
+                    Text(
+                        text = "歌曲、歌手",
+                        style = AwwTheme.type.body,
+                        color = AwwColors.Ink3
+                    )
+                }
+                BasicTextField(
+                    value = state.query,
+                    onValueChange = vm::onQueryChange,
+                    singleLine = true,
+                    textStyle = AwwTheme.type.body.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(AwwColors.Accent),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { vm.search(state.query) }),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+        AwwRule()
+
         when {
             state.searching && state.results.isEmpty() -> LoadingBlock()
-            state.error != null -> ErrorBanner("搜索失败：${state.error}")
-            state.searched && state.results.isEmpty() -> EmptyBlock("没有找到相关歌曲")
-            !state.searched -> EmptyBlock("输入关键词开始搜索")
-            else -> LazyColumn(Modifier.fillMaxSize()) {
+            state.error != null -> Column(Modifier.padding(horizontal = AwwSpace.s6)) {
+                Spacer(Modifier.height(AwwSpace.s12))
+                AwwEmpty(index = "ERR", title = "搜索失败", hint = state.error ?: "")
+            }
+            state.searched && state.results.isEmpty() -> Column(Modifier.padding(horizontal = AwwSpace.s6)) {
+                Spacer(Modifier.height(AwwSpace.s12))
+                AwwEmpty(index = "000", title = "没有找到", hint = "换个关键词试试")
+            }
+            !state.searched -> Column(Modifier.padding(horizontal = AwwSpace.s6)) {
+                Spacer(Modifier.height(AwwSpace.s12))
+                AwwEmpty(index = "—", title = "输入关键词", hint = "支持歌名与歌手")
+            }
+            else -> LazyColumn(Modifier.fillMaxSize().padding(horizontal = AwwSpace.s6)) {
                 itemsIndexed(
                     state.results,
-                    key = { i, s -> "${s.id}-$i" },
-                    // v1.10.0（P10）：声明 contentType，让 Lazy 只复用同类槽位；
-                    // 缺省时所有条目同类型，滚动中 reuse 更频繁、组合开销更大。
+                    key = { i, s -> s.id + "-" + i },
                     contentType = { _, _ -> "song" }
                 ) { index, song ->
                     SongListItem(
@@ -97,7 +142,9 @@ fun SearchScreen(onBack: () -> Unit) {
                         onClick = { vm.play(index) }
                     )
                 }
-                item { Spacer(Modifier.height(80.dp)) }
+                item(key = "bottom_pad", contentType = "spacer") {
+                    Spacer(Modifier.height(AwwSpace.s24))
+                }
             }
         }
     }

@@ -1,446 +1,821 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-scheme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MusicPipe 音乐控制台</title>
-<link rel="stylesheet" href="/vendor/element-plus.css">
-<link rel="stylesheet" href="/style.css">
+<title>MusicPipe 控制台</title>
+<meta name="theme-color" content="#fafafa">
+<!-- 反 FOUC 引导：必须在任何 <link rel="stylesheet"> 之前同步执行。
+     只解析「跟随系统 / 深色 / 浅色」三态，把结果落到 html[data-scheme]，
+     于是首帧就是正确明暗，不会闪一下再跳色（FRONTEND_GUIDE §2.1 双通道）。 -->
+<script>
+(function () {
+  try {
+    var d = document.documentElement;
+    var pref = localStorage.getItem("mp.scheme");
+    if (pref !== "dark" && pref !== "light") pref = "system";
+    var dark = pref === "system"
+      ? !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches)
+      : pref === "dark";
+    d.setAttribute("data-scheme", dark ? "dark" : "light");
+  } catch (e) {}
+})();
+</script>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- 正文字体走系统栈（-apple-system / PingFang SC / Noto Sans SC），零下载；
+     只自托管一套等宽字体给数字与编号用，两个字重足够。 -->
+<link rel="preload" href="/assets/fonts/jetbrains-mono-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/components.css">
+<link rel="stylesheet" href="/css/pages.css">
 </head>
 <body>
-<div id="app"></div>
 
-<script src="/vendor/vue.global.prod.js"></script>
-<script src="/vendor/element-plus.full.min.js"></script>
+<!-- 加载页与自定义光标已移除：控制台用真实骨架态代替"0→100 计数器"，
+     指针保持系统默认（FRONTEND_GUIDE §0 让界面退到幕后）。 -->
+<div id="app"></div>
 
 <!-- ============ 模板 ============ -->
 
 <script type="text/x-template" id="tpl-login">
-<div>
-  <div class="login-box">
-    <div class="login-title">MusicPipe {{ isSetup ? '初始化' : '控制台登录' }}</div>
-    <div v-if="isSetup" class="hint">首次使用：创建管理员账号（与 App 共用同一账号体系）</div>
-    <el-input v-model="username" placeholder="用户名" style="margin-bottom:10px" @keyup.enter="submit" :disabled="loading"></el-input>
-    <el-input v-model="password" type="password" :placeholder="isSetup ? '密码（至少6位）' : '密码'" @keyup.enter="submit" show-password :disabled="loading"></el-input>
-    <div class="hint" v-if="isSetup">管理员可登录控制台并管理全部功能；普通用户仅能登录 App。</div>
-    <div class="hint" v-else>仅限管理员账号登录。账号与 MusicPipe App 通用。</div>
-    <el-button type="primary" style="width:100%;margin-top:14px" @click="submit" :loading="loading">
-      {{ isSetup ? '创建并进入' : '登录' }}
-    </el-button>
-    <div class="hint" v-if="error" style="color:#f56c6c">{{ error }}</div>
+<div class="page page--login">
+  <div class="login__grid">
+    <div class="login__scene">
+      <div class="page__no">00 · CONSOLE</div>
+      <h1 class="login__hero" v-if="isSetup"><span class="rv-line"><span>初始化控制台</span></span></h1>
+      <h1 class="login__hero" v-else><span class="rv-line"><span>控制台登录</span></span></h1>
+      <p class="lede">{{ isSetup ? '首次使用：创建管理员账号（与 App 共用同一账号体系）。管理员可登录控制台并管理全部功能；普通用户仅能登录 App。' : '仅限管理员账号登录。账号与 MusicPipe App 通用。' }}</p>
+    </div>
+    <form class="login__card" @submit.prevent="submit" novalidate>
+      <div class="field">
+        <label class="field__lb" for="lg-user">用户名</label>
+        <input class="inp" id="lg-user" v-model="username" autocomplete="username" :disabled="loading" @keyup.enter="submit">
+      </div>
+      <div class="field">
+        <label class="field__lb" for="lg-pass">密码</label>
+        <div class="login__pwd">
+          <input class="inp" id="lg-pass" :type="showPwd ? 'text' : 'password'" :placeholder="isSetup ? '密码（至少6位）' : '密码'" autocomplete="current-password" v-model="password" :disabled="loading" @keyup.enter="submit">
+          <button type="button" class="btn btn--icon login__eye" :aria-label="showPwd ? '隐藏密码' : '显示密码'" tabindex="-1" @click="showPwd = !showPwd"><i v-ic="showPwd ? 'eye-off' : 'eye'"></i></button>
+        </div>
+      </div>
+      <div class="field__err" v-if="error">{{ error }}</div>
+      <button type="submit" class="btn btn--cta login__submit" :disabled="loading" :data-loading="loading ? 'true' : 'false'" data-cursor="Go">{{ isSetup ? '创建并进入' : '登录' }}</button>
+    </form>
   </div>
 </div>
 </script>
 
 <script type="text/x-template" id="tpl-dashboard">
-<div>
-  <h3>概览</h3>
-  <div class="mp-cards">
-    <div class="mp-card"><div class="lbl">库内曲目</div><div class="num">{{ counts.tracks || 0 }}</div></div>
-    <div class="mp-card"><div class="lbl">已入库(imported)</div><div class="num">{{ counts.tracks_imported || 0 }}</div></div>
-    <div class="mp-card"><div class="lbl">进行中任务</div><div class="num">{{ counts.tasks_running || 0 }}</div></div>
-    <div class="mp-card"><div class="lbl">今日下载</div><div class="num">{{ counts.today_downloads || 0 }}</div></div>
-    <div class="mp-card"><div class="lbl">磁盘(挂载视图)</div><div class="num">{{ pct }}</div><div class="lbl">剩余 {{ gb(disk.free) }} / {{ gb(disk.total) }}</div></div>
+<div class="page">
+  <div class="page__hero">
+    <div class="page__no">01</div>
+    <h1><span class="rv-line"><span>概览</span></span></h1>
+    <p class="lede">系统状态与事件流 · 8 秒自动刷新。</p>
   </div>
-  <h4>服务状态</h4>
-  <el-table :data="serviceRows" size="small" style="max-width:640px">
-    <el-table-column prop="name" label="服务" width="160"></el-table-column>
-    <el-table-column label="状态" width="120">
-      <template #default="s"><span class="dot" :class="s.row.ok ? 'dot-ok' : 'dot-bad'"></span>{{ s.row.ok ? '正常' : '异常' }}</template>
-    </el-table-column>
-    <el-table-column prop="info" label="详情"></el-table-column>
-  </el-table>
-  <h4 style="margin-top:18px">最近事件</h4>
-  <div style="max-width:760px">
-    <div v-for="e in events" :key="e.id" class="mono" style="padding:3px 0;border-bottom:1px dashed #eee">
-      {{ fmt(e.created_at) }} · {{ e.kind }} · {{ clip(e.detail) }}
-    </div>
-    <div v-if="!events.length" class="hint">暂无事件</div>
+  <div class="page__body dash__body">
+    <section class="sect dash__stats">
+      <div class="stat stat--hero">
+        <div class="stat__lbl">库内曲目</div>
+        <div class="stat__num t-mono" v-count="counts.tracks || 0">0</div>
+        <div class="stat__sub"><span class="bar stat__bar"><span class="bar__fill" :style="{ '--bar-w': importedRatio }"></span></span><span>已入库 <b class="t-mono" v-count="counts.tracks_imported || 0">0</b> / {{ counts.tracks || 0 }}</span></div>
+      </div>
+      <div class="stat stat--tile">
+        <div class="stat__lbl">已入库</div>
+        <div class="stat__num t-mono" v-count="counts.tracks_imported || 0">0</div>
+      </div>
+      <div class="stat stat--tile">
+        <div class="stat__lbl">进行中任务</div>
+        <div class="stat__num t-mono" v-count="counts.tasks_running || 0">0</div>
+        <div class="stat__sub">实时同步</div>
+      </div>
+      <div class="stat stat--tile">
+        <div class="stat__lbl">今日下载</div>
+        <div class="stat__num t-mono" v-count="counts.today_downloads || 0">0</div>
+      </div>
+      <div class="stat stat--disk">
+        <div class="stat__lbl">磁盘（挂载视图）</div>
+        <div class="stat__num t-mono"><span v-count="pctNum">-</span><span v-if="pctNum !== null">%</span></div>
+        <div class="bar disk__bar"><span class="bar__fill" :style="{ '--bar-w': diskRatio }"></span></div>
+        <div class="stat__sub">剩余 {{ gb(disk.free) }} / {{ gb(disk.total) }}</div>
+      </div>
+    </section>
+
+    <section class="sect dash__lower">
+      <div class="dash__services">
+        <h2 class="sect__h">服务状态</h2>
+        <div class="table-wrap">
+          <table class="mp-table">
+            <thead><tr><th scope="col">服务</th><th scope="col">状态</th><th scope="col">详情</th></tr></thead>
+            <tbody>
+              <tr v-for="s in serviceRows" :key="s.name">
+                <td data-label="服务">{{ s.name }}</td>
+                <td data-label="状态"><span class="dot" :class="s.ok ? 'dot--ok' : 'dot--bad'"></span>{{ s.ok ? '正常' : '异常' }}</td>
+                <td class="t-mono cell-dim" data-label="详情">{{ s.info }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <aside class="dash__feed">
+        <h2 class="sect__h">最近事件</h2>
+        <div class="feed">
+          <div class="feed__row" v-for="e in events" :key="e.id">
+            <span class="t-mono">{{ fmt(e.created_at) }}</span>
+            <span class="feed__kind tag tag--info">{{ e.kind }}</span>
+            <span class="feed__detail">{{ clip(e.detail) }}</span>
+          </div>
+          <div class="hint" v-if="!events.length">暂无事件</div>
+        </div>
+      </aside>
+    </section>
   </div>
 </div>
 </script>
 
 <script type="text/x-template" id="tpl-search">
-<div>
-  <div class="mp-toolbar">
-    <el-input v-model="keyword" placeholder="搜索歌曲，回车同时查询全部平台" style="width:300px" @keyup.enter="doSearch"></el-input>
-    <el-select v-model="quality" style="width:120px">
-      <el-option label="FLAC无损" value="flac"></el-option>
-      <el-option label="320k" value="320k"></el-option>
-      <el-option label="128k" value="128k"></el-option>
-    </el-select>
-    <el-button type="primary" @click="doSearch" :loading="loading">搜索全部平台</el-button>
-    <el-button @click="downloadSelected" :disabled="!sel.length">下载选中({{ sel.length }})</el-button>
+<div class="page">
+  <div class="page__hero">
+    <div class="page__no">02</div>
+    <h1><span class="rv-line"><span>全平台搜索</span></span></h1>
+    <p class="lede">一个关键词，多平台并发应答；选中即入队下载。</p>
   </div>
-  <div class="hint" style="margin:6px 0">{{ tip }}</div>
-  <el-tabs v-model="tab" style="margin-bottom:4px">
-    <el-tab-pane label="全部" name="all"></el-tab-pane>
-    <el-tab-pane v-for="r in results" :key="r.platform" :name="r.platform" :label="r.name + (r.loading ? ' …' : r.ok ? ' ' + r.count : ' 失败')"></el-tab-pane>
-  </el-tabs>
-  <el-table :data="shown" @selection-change="sel=$event" size="small" row-key="rowid" v-loading="loading">
-    <el-table-column type="selection" width="42"></el-table-column>
-    <el-table-column label="平台" width="84">
-      <template #default="s"><el-tag size="small" :type="platTag(s.row.source)" effect="plain">{{ platName(s.row.source) }}</el-tag></template>
-    </el-table-column>
-    <el-table-column prop="name" label="歌曲" min-width="170"></el-table-column>
-    <el-table-column prop="singer" label="歌手" width="140"></el-table-column>
-    <el-table-column prop="album" label="专辑" width="150" show-overflow-tooltip></el-table-column>
-    <el-table-column label="时长" width="72"><template #default="s">{{ dur(s.row.duration) }}</template></el-table-column>
-    <el-table-column label="可选音质" width="150">
-      <template #default="s"><span class="mono">{{ (s.row.types||[]).map(t=>t.type).join(' / ') }}</span></template>
-    </el-table-column>
-    <el-table-column label="操作" width="96">
-      <template #default="s"><el-button size="small" @click="dlOne(s.row)">下载</el-button></template>
-    </el-table-column>
-  </el-table>
-  <div class="mp-toolbar" style="margin-top:10px">
-    <el-button :disabled="page<=1||loading" @click="page--;doSearch()">上一页</el-button>
-    <span>第 {{ page }} 页</span>
-    <el-button :disabled="loading" @click="page++;doSearch()">下一页</el-button>
+  <div class="page__body">
+    <div class="bar-tools">
+      <input class="inp search__kw" v-model="keyword" placeholder="搜索歌曲，回车同时查询全部平台" @keyup.enter="doSearch">
+      <div class="field search__q">
+        <label class="field__lb" for="sq-quality">音质</label>
+        <select class="sel" id="sq-quality" v-model="quality">
+          <option value="auto">最高(自动)</option>
+          <option value="flac">FLAC无损</option>
+          <option value="320k">320k</option>
+          <option value="128k">128k</option>
+        </select>
+      </div>
+      <button class="btn btn--cta" :disabled="loading" :data-loading="loading ? 'true' : 'false'" data-cursor="Go" @click="doSearch"><i v-ic="'search'"></i>搜索全部平台</button>
+      <button class="btn" :disabled="!sel.length" @click="downloadSelected"><i v-ic="'download'"></i>下载选中({{ sel.length }})</button>
+    </div>
+    <div class="hint search__tip">{{ tip }}</div>
+    <div class="tabs" role="tablist">
+      <button class="tab" :class="{ 'tab--on': tab === 'all' }" role="tab" :aria-selected="tab === 'all'" @click="tab = 'all'">全部<span class="tab__n" v-if="allRows.length">{{ allRows.length }}</span></button>
+      <button class="tab" :class="{ 'tab--on': tab === r.platform }" role="tab" :aria-selected="tab === r.platform" v-for="r in results" :key="r.platform" @click="tab = r.platform">{{ r.name }}<span class="tab__n">{{ r.loading ? '…' : (r.ok ? r.count : '失败') }}</span></button>
+    </div>
+    <div class="table-wrap">
+      <table class="mp-table" :class="{ 'mp-table--busy': loading }">
+        <thead>
+          <tr>
+            <th scope="col" class="col-ck"><input type="checkbox" class="ck" aria-label="全选本页" :checked="allSel" v-indet="partialSel" @change="toggleAll"></th>
+            <th scope="col">平台</th>
+            <th scope="col">歌曲</th>
+            <th scope="col">歌手</th>
+            <th scope="col">专辑</th>
+            <th scope="col">时长</th>
+            <th scope="col">可选音质</th>
+            <th scope="col">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in shown" :key="row.rowid">
+            <td class="col-ck" data-label="选择"><input type="checkbox" class="ck" :value="row" v-model="sel" :aria-label="'选择 ' + row.name"></td>
+            <td data-label="平台"><span class="tag" :class="'tag--' + platTag(row.source)">{{ platName(row.source) }}</span></td>
+            <td class="cell-main" data-label="歌曲">{{ row.name }}</td>
+            <td data-label="歌手">{{ row.singer }}</td>
+            <td class="cell-album" :title="row.album" data-label="专辑">{{ row.album }}</td>
+            <td class="t-mono" data-label="时长">{{ dur(row.duration) }}</td>
+            <td class="t-mono" data-label="可选音质">{{ fmtTypes(row) }}</td>
+            <td data-label="操作"><button class="btn btn--icon" data-cursor="Go" title="下载" @click="dlOne(row)"><i v-ic="'download'"></i></button></td>
+          </tr>
+          <tr v-if="!shown.length && !loading"><td class="cell-empty" colspan="8" data-label="选择">无结果 · 换个关键词或翻页</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager search__pager">
+      <button class="pager__btn" :disabled="page <= 1 || loading" @click="page--; doSearch()"><i class="i-arrow" v-ic="'chevron-left'"></i>上一页</button>
+      <span class="pager__cur">第 {{ page }} 页</span>
+      <button class="pager__btn" :disabled="loading" @click="page++; doSearch()">下一页<i class="i-arrow" v-ic="'chevron-right'"></i></button>
+    </div>
   </div>
 </div>
 </script>
 
 <script type="text/x-template" id="tpl-tasks">
-<div>
-  <div class="mp-toolbar">
-    <el-button @click="load">刷新</el-button>
-    <el-button @click="onlyFailed">{{ onlyF?'查看全部':'只看失败' }}</el-button>
-    <el-button type="warning" plain :disabled="!sel.length" @click="bulkCancel">取消选中({{ sel.length }})</el-button>
-    <el-button type="danger" plain :disabled="!sel.length" @click="bulkDel">删除选中记录({{ sel.length }})</el-button>
-    <el-button type="danger" plain @click="clearFin">清除已完成</el-button>
-    <span class="hint">勾选行可批量取消/删除</span>
+<div class="page">
+  <div class="page__hero">
+    <div class="page__no">03</div>
+    <h1><span class="rv-line"><span>下载任务</span></span></h1>
+    <p class="lede">队列进度、速度与失败重试 · 5 秒轮询 + WS 实时触发。</p>
   </div>
-  <el-table :data="shownList" @selection-change="sel=$event" size="small">
-    <el-table-column type="selection" width="42"></el-table-column>
-    <el-table-column prop="id" label="ID" width="150" class-name="mono"></el-table-column>
-    <el-table-column prop="type" label="类型" width="80"></el-table-column>
-    <el-table-column prop="status" label="状态" width="110"></el-table-column>
-    <el-table-column label="进度" width="220">
-      <template #default="s">
-        <div class="progress-cell">
-          <el-progress :percentage="s.row.progress||0" :status="s.row.status==='failed'?'exception':(s.row.progress>=100?'success':'')" style="flex:1"></el-progress>
-        </div>
-      </template>
-    </el-table-column>
-    <el-table-column prop="message" label="信息" min-width="160"></el-table-column>
-    <el-table-column label="速度" width="100"><template #default="s">{{ s.row.speed ? mb(s.row.speed)+'/s' : '-' }}</template></el-table-column>
-    <el-table-column prop="error" label="错误" width="180"><template #default="s"><span class="mono">{{ clip(s.row.error,60) }}</span></template></el-table-column>
-    <el-table-column label="操作" width="150">
-      <template #default="s">
-        <el-button v-if="s.row.status==='failed'" size="small" @click="retry(s.row.id)">重试</el-button>
-        <el-button v-if="['pending','downloading','uploading','tagging','verifying','organizing'].includes(s.row.status)" size="small" @click="cancel(s.row.id)">取消</el-button>
-      </template>
-    </el-table-column>
-  </el-table>
+  <div class="page__body">
+    <div class="bar-tools">
+      <button class="btn" @click="load"><i v-ic="'refresh-cw'"></i>刷新</button>
+      <button class="btn" @click="onlyFailed">{{ onlyF ? '查看全部' : '只看失败' }}</button>
+      <button class="btn" :disabled="!sel.length" @click="bulkCancel"><i v-ic="'ban'"></i>取消选中({{ sel.length }})</button>
+      <button class="btn btn--danger" :disabled="!sel.length" @click="bulkDel"><i v-ic="'trash-2'"></i>删除选中记录({{ sel.length }})</button>
+      <button class="btn btn--danger btn--ghost" @click="clearFin"><i v-ic="'trash-2'"></i>清除已完成</button>
+      <span class="hint">勾选行可批量取消/删除</span>
+    </div>
+    <div class="table-wrap">
+      <table class="mp-table">
+        <thead>
+          <tr>
+            <th scope="col" class="col-ck"><input type="checkbox" class="ck" aria-label="全选" :checked="allSel" v-indet="partialSel" @change="toggleAll"></th>
+            <th scope="col">ID</th>
+            <th scope="col">类型</th>
+            <th scope="col">状态</th>
+            <th scope="col">进度</th>
+            <th scope="col">信息</th>
+            <th scope="col">速度</th>
+            <th scope="col">错误</th>
+            <th scope="col">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="t in shownList" :key="t.id">
+            <td class="col-ck" data-label="选择"><input type="checkbox" class="ck" :value="t" v-model="sel" :aria-label="'选择任务 ' + t.id"></td>
+            <td class="t-mono" data-label="ID">{{ t.id }}</td>
+            <td data-label="类型">{{ t.type }}</td>
+            <td data-label="状态"><span class="dot" :class="taskDot(t.status)"></span>{{ t.status }}</td>
+            <td class="cell-progress" data-label="进度">
+              <div class="bar bar--row" :class="{ 'bar--err': t.status === 'failed', 'bar--ok': t.progress >= 100 }" :style="{ '--bar-w': (t.progress || 0) / 100 }"><span class="bar__fill"></span></div>
+              <span class="t-mono bar__pct">{{ t.progress || 0 }}%</span>
+            </td>
+            <td class="cell-main" data-label="信息">{{ t.message }}</td>
+            <td class="t-mono" data-label="速度">{{ t.speed ? mb(t.speed) + '/s' : '-' }}</td>
+            <td class="t-mono cell-dim" data-label="错误">{{ clip(t.error) }}</td>
+            <td class="cell-actions" data-label="操作">
+              <button class="btn btn--icon" v-if="t.status === 'failed'" title="重试" data-cursor="Go" @click="retry(t.id)"><i v-ic="'rotate-ccw'"></i></button>
+              <button class="btn btn--icon" v-if="cancellable(t.status)" title="取消" data-cursor="Go" @click="cancel(t.id)"><i v-ic="'ban'"></i></button>
+            </td>
+          </tr>
+          <tr v-if="!shownList.length"><td class="cell-empty" colspan="9" data-label="选择">{{ onlyF ? '没有失败或取消的任务' : '队列为空' }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 </script>
 
 <script type="text/x-template" id="tpl-tracks">
-<div>
-  <div class="mp-toolbar">
-    <el-input v-model="q" placeholder="搜索库内曲目" style="width:240px" @keyup.enter="load"></el-input>
-    <el-button @click="load">查询</el-button>
-    <el-button @click="goOrganize">去整理页</el-button>
-    <el-popconfirm :title="'删除选中的 '+sel.length+' 首？网盘文件一并删除'" @confirm="bulkDel">
-      <template #reference><el-button type="danger" plain :disabled="!sel.length">批量删除({{ sel.length }})</el-button></template>
-    </el-popconfirm>
+<div class="page">
+  <div class="page__hero">
+    <div class="page__no">04</div>
+    <h1><span class="rv-line"><span>音乐库</span></span></h1>
+    <p class="lede">网盘曲库索引：预览、整理、刮削与删除。</p>
   </div>
-  <el-table :data="list" @selection-change="sel=$event" size="small">
-    <el-table-column type="selection" width="42"></el-table-column>
-    <el-table-column prop="title" label="标题" min-width="160"></el-table-column>
-    <el-table-column prop="artist" label="歌手" width="130"></el-table-column>
-    <el-table-column prop="album" label="专辑" width="150"></el-table-column>
-    <el-table-column prop="quality" label="音质" width="80"></el-table-column>
-    <el-table-column prop="status" label="状态" width="100"></el-table-column>
-    <el-table-column prop="remote_path" label="网盘路径" min-width="240" class-name="mono"></el-table-column>
-    <el-table-column label="大小" width="90"><template #default="s">{{ mb(s.row.file_size) }}</template></el-table-column>
-    <el-table-column label="操作" width="280">
-      <template #default="s">
-        <el-button size="small" type="primary" plain @click="play(s.row.id)">预览</el-button>
-        <el-button v-if="s.row.status==='uploaded'" size="small" @click="organize(s.row.id)">整理</el-button>
-        <el-button size="small" @click="scrape(s.row.id)" :loading="scraping===s.row.id">刮削</el-button>
-        <el-popconfirm title="删除网盘文件+记录？" @confirm="del(s.row.id)">
-          <template #reference><el-button size="small" type="danger" plain>删除</el-button></template>
-        </el-popconfirm>
-      </template>
-    </el-table-column>
-  </el-table>
-  <el-dialog v-model="dlg" title="试听" width="520px">
-    <audio controls autoplay :src="audiosrc" style="width:100%" v-if="audiosrc"></audio>
-    <div class="hint">预览由控制台经 WebDAV 流式转发，不暴露网盘地址</div>
-  </el-dialog>
+  <div class="page__body">
+    <div class="bar-tools">
+      <input class="inp tracks__q" v-model="q" placeholder="搜索库内曲目" @keyup.enter="load">
+      <button class="btn btn--cta" @click="load"><i v-ic="'search'"></i>查询</button>
+      <button class="btn" @click="goOrganize"><i v-ic="'folder'"></i>去整理页</button>
+      <button class="btn btn--danger" :disabled="!sel.length" @click="bulkDel"><i v-ic="'trash-2'"></i>批量删除({{ sel.length }})</button>
+    </div>
+    <div class="table-wrap">
+      <table class="mp-table">
+        <thead>
+          <tr>
+            <th scope="col" class="col-ck"><input type="checkbox" class="ck" aria-label="全选" :checked="allSel" v-indet="partialSel" @change="toggleAll"></th>
+            <th scope="col">标题</th>
+            <th scope="col">歌手</th>
+            <th scope="col">专辑</th>
+            <th scope="col">音质</th>
+            <th scope="col">状态</th>
+            <th scope="col">网盘路径</th>
+            <th scope="col">大小</th>
+            <th scope="col">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="t in list" :key="t.id">
+            <td class="col-ck" data-label="选择"><input type="checkbox" class="ck" :value="t" v-model="sel" :aria-label="'选择 ' + t.title"></td>
+            <td class="cell-main" data-label="标题">{{ t.title }}</td>
+            <td data-label="歌手">{{ t.artist }}</td>
+            <td data-label="专辑">{{ t.album }}</td>
+            <td class="t-mono" data-label="音质">{{ t.quality }}</td>
+            <td data-label="状态"><span class="tag" :class="'tag--' + trackTag(t.status)">{{ t.status }}</span></td>
+            <td class="t-mono cell-path" :title="t.remote_path" data-label="网盘路径">{{ t.remote_path }}</td>
+            <td class="t-mono" data-label="大小">{{ mb(t.file_size) }}</td>
+            <td class="cell-actions" data-label="操作">
+              <button class="btn btn--icon" title="预览" data-cursor="Open" @click="play(t.id)"><i v-ic="'play'"></i></button>
+              <button class="btn btn--icon" v-if="t.status === 'uploaded'" title="整理" data-cursor="Go" @click="organize(t.id)"><i v-ic="'folder'"></i></button>
+              <button class="btn btn--icon" title="刮削" :disabled="scraping === t.id" :data-loading="scraping === t.id ? 'true' : 'false'" data-cursor="Go" @click="scrape(t.id)"><i v-ic="'sparkles'"></i></button>
+              <button class="btn btn--icon btn--danger" title="删除" data-cursor="Go" @click="del(t.id)"><i v-ic="'trash-2'"></i></button>
+            </td>
+          </tr>
+          <tr v-if="!list.length"><td class="cell-empty" colspan="9" data-label="选择">库内暂无曲目</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <mp-modal v-if="dlg" title="试听" @close="dlg = false">
+      <div class="modal__audio">
+        <audio controls autoplay :src="audiosrc" v-if="audiosrc"></audio>
+        <p class="hint">预览由控制台经 WebDAV 流式转发，不暴露网盘地址</p>
+      </div>
+    </mp-modal>
+  </div>
 </div>
 </script>
 
-
 <script type="text/x-template" id="tpl-shares">
-<div>
-  <div class="mp-toolbar">
-    <el-input v-model="url" placeholder="粘贴网易云音乐或QQ音乐的「歌单分享链接」(支持短链)" style="width:420px" @keyup.enter="add"></el-input>
-    <el-button type="primary" @click="add" :loading="adding">解析预览</el-button>
-    <el-button @click="load">刷新列表</el-button>
+<div class="page">
+  <div class="page__hero">
+    <div class="page__no">06</div>
+    <h1><span class="rv-line"><span>分享歌单</span></span></h1>
+    <p class="lede">订阅制歌单：解析预览、同步补下、暂停退订。</p>
   </div>
-  <div class="hint" style="margin:6px 0">订阅流程为两步：解析预览 → 核对分享用户与曲目 → 点「开始下载」。已订阅歌单每天自动重新解析，新增歌曲自动补下（与源歌单保持一致）。</div>
-  <el-table :data="list" size="small">
-    <el-table-column label="歌单" min-width="200">
-      <template #default="s"><b>{{ s.row.title }}</b><div class="hint">🔗 分享用户: {{ s.row.share_user }} · {{ s.row.platform === 'wy' ? '网易云' : 'QQ音乐' }}</div></template>
-    </el-table-column>
-    <el-table-column label="音质" width="72"><template #default="s">{{ s.row.quality }}</template></el-table-column>
-    <el-table-column label="曲目" width="90"><template #default="s">{{ s.row.in_library }}/{{ s.row.song_count }}</template></el-table-column>
-    <el-table-column label="状态" width="90">
-      <template #default="s"><el-tag size="small" :type="s.row.status==='active'?'success':(s.row.status==='pending'?'warning':(s.row.status==='paused'?'info':'danger'))">{{ {active:'同步中',pending:'待确认',paused:'已暂停',expired:'链接失效'}[s.row.status] || s.row.status }}</el-tag></template>
-    </el-table-column>
-    <el-table-column label="最近结果" min-width="150"><template #default="s"><span class="hint">{{ s.row.last_result }}</span></template></el-table-column>
-    <el-table-column label="操作" width="250">
-      <template #default="s">
-        <el-button size="small" type="primary" plain @click="openPreview(s.row)">{{ s.row.status==='pending' ? '预览下载' : '预览' }}</el-button>
-        <el-button v-if="s.row.status!=='pending'" size="small" :loading="busy===s.row.id" @click="sync(s.row)">同步</el-button>
-        <el-button v-if="s.row.status!=='pending'" size="small" @click="toggle(s.row)">{{ s.row.status==='paused'?'恢复':'暂停' }}</el-button>
-        <el-popconfirm title="退订？已下载文件保留" @confirm="del(s.row)">
-          <template #reference><el-button size="small" type="danger" plain>退订</el-button></template>
-        </el-popconfirm>
-      </template>
-    </el-table-column>
-  </el-table>
-  <div class="hint" v-if="!list.length" style="margin-top:18px">暂无订阅。从手机网易云/QQ音乐App分享一个歌单链接粘贴到上方即可。</div>
-
-  <el-dialog v-model="pv" :title="prev.link ? ('歌单预览 · ' + prev.link.title) : '预览'" width="720px" top="6vh">
-    <div v-if="prev.link" style="margin-bottom:10px">
-      <div class="mp-toolbar" style="align-items:center">
-        <span style="width:90px;color:#606266">分享用户:</span>
-        <el-input v-model="pvUser" style="width:200px" size="small"></el-input>
-        <span class="hint" style="margin:0 8px">（专辑将按此名称创建；解析值{{ prev.link.user_id ? "(链接指定分享者uid:" + prev.link.user_id + ")" : "(取歌单创建者)" }}如有出入请直接修改）</span>
-        <span style="color:#606266;margin-left:8px">音质:</span>
-        <el-select v-model="pvQuality" size="small" style="width:128px"><el-option label="最高(自动)" value="auto"></el-option><el-option label="FLAC" value="flac"></el-option><el-option label="320k" value="320k"></el-option><el-option label="128k" value="128k"></el-option></el-select>
-      </div>
+  <div class="page__body">
+    <div class="bar-tools">
+      <input class="inp shares__url" v-model="url" placeholder="粘贴网易云音乐或QQ音乐的「歌单分享链接」(支持短链)" @keyup.enter="add">
+      <button class="btn btn--cta" :disabled="adding" :data-loading="adding ? 'true' : 'false'" data-cursor="Go" @click="add"><i v-ic="'link'"></i>解析预览</button>
+      <button class="btn" @click="load"><i v-ic="'refresh-cw'"></i>刷新列表</button>
     </div>
-    <el-table :data="pvSongs" @selection-change="pvSel=$event" size="small" max-height="380" ref="pvtable">
-      <el-table-column type="selection" width="40"></el-table-column>
-      <el-table-column prop="no" label="#" width="50"></el-table-column>
-      <el-table-column prop="title" label="歌曲" min-width="150"></el-table-column>
-      <el-table-column prop="artist" label="歌手" width="140"></el-table-column>
-      <el-table-column label="在库" width="70"><template #default="s"><el-tag v-if="s.row.in_lib" size="small" type="info">已有</el-tag><el-tag v-else-if="s.row.state!=='preview'&&s.row.state!=='failed'" size="small" :type="s.row.state==='done'?'success':'warning'">{{ {queued:'排队',exists:'已有',failed:'失败'}[s.row.state]||s.row.state }}</el-tag></template></el-table-column>
-    </el-table>
-    <div class="hint" style="margin-top:8px">共 {{ pvSongs.length }} 首，将下载 {{ pvSel.filter(x=>x.state==='preview'&&!x.in_lib).length }} 首（已入库/已有自动跳过；失败项可在下次同步时重试）</div>
-    <template #footer>
-      <el-button @click="pv=false">稍后再说</el-button>
-      <el-button type="primary" :disabled="!pvSel.length" :loading="committing" @click="doCommit">开始下载（{{ pvSel.length }} 首）</el-button>
-    </template>
-  </el-dialog>
+    <div class="hint">订阅流程为两步：解析预览 → 核对分享用户与曲目 → 点「开始下载」。已订阅歌单每天自动重新解析，新增歌曲自动补下（与源歌单保持一致）。</div>
+    <div class="table-wrap">
+      <table class="mp-table">
+        <thead>
+          <tr>
+            <th scope="col">歌单</th>
+            <th scope="col">音质</th>
+            <th scope="col">曲目</th>
+            <th scope="col">状态</th>
+            <th scope="col">最近结果</th>
+            <th scope="col">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="s in list" :key="s.id">
+            <td class="cell-main" data-label="歌单">
+              <b>{{ s.title }}</b>
+              <div class="hint shares__sub"><i class="i-arrow" v-ic="'link'"></i>分享用户: {{ s.share_user }} · {{ s.platform === 'wy' ? '网易云' : 'QQ音乐' }}</div>
+            </td>
+            <td class="t-mono" data-label="音质">{{ s.quality }}</td>
+            <td class="t-mono" data-label="曲目">{{ s.in_library }}/{{ s.song_count }}</td>
+            <td data-label="状态"><span class="tag" :class="'tag--' + shareTag(s.status)">{{ shareLabel(s.status) }}</span></td>
+            <td data-label="最近结果"><span class="hint">{{ s.last_result }}</span></td>
+            <td class="cell-actions" data-label="操作">
+              <button class="btn" data-cursor="Open" @click="openPreview(s)">{{ s.status === 'pending' ? '预览下载' : '预览' }}</button>
+              <button class="btn" v-if="s.status !== 'pending'" :disabled="busy === s.id" :data-loading="busy === s.id ? 'true' : 'false'" @click="sync(s)">同步</button>
+              <button class="btn" v-if="s.status !== 'pending'" @click="toggle(s)">{{ s.status === 'paused' ? '恢复' : '暂停' }}</button>
+              <button class="btn btn--danger btn--ghost" @click="del(s)">退订</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="empty" v-if="!list.length">
+      <p>暂无订阅。从手机网易云/QQ音乐App分享一个歌单链接粘贴到上方即可。</p>
+    </div>
+
+    <mp-modal v-if="pv" wide :title="prev.link ? ('歌单预览 · ' + prev.link.title) : '预览'" @close="pv = false">
+      <div class="pv__toolbar" v-if="prev.link">
+        <div class="field pv__user-f">
+          <label class="field__lb" for="pv-user">分享用户</label>
+          <input class="inp" id="pv-user" v-model="pvUser">
+        </div>
+        <span class="hint">{{ prev.link.user_id ? '（专辑将按此名称创建；解析值(链接指定分享者uid:' + prev.link.user_id + ')如有出入请直接修改）' : '（专辑将按此名称创建；解析值(取歌单创建者)如有出入请直接修改）' }}</span>
+        <div class="field pv__q-f">
+          <label class="field__lb" for="pv-quality">音质</label>
+          <select class="sel" id="pv-quality" v-model="pvQuality">
+            <option value="auto">最高(自动)</option>
+            <option value="flac">FLAC</option>
+            <option value="320k">320k</option>
+            <option value="128k">128k</option>
+          </select>
+        </div>
+      </div>
+      <div class="pv__scroll">
+        <table class="mp-table">
+          <thead>
+            <tr>
+              <th scope="col" class="col-ck"><input type="checkbox" class="ck" aria-label="全选可下载项" :checked="pvAllSel" v-indet="pvPartialSel" @change="pvToggleAll"></th>
+              <th scope="col">#</th>
+              <th scope="col">歌曲</th>
+              <th scope="col">歌手</th>
+              <th scope="col">在库</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, ri) in pvSongs" :key="row.ext_key || ri">
+              <td class="col-ck" data-label="选择"><input type="checkbox" class="ck" :checked="inPv(row)" @change="pvToggleRow(row)" :aria-label="'选择 ' + row.title"></td>
+              <td class="t-mono" data-label="#">{{ row.no }}</td>
+              <td class="cell-main" data-label="歌曲">{{ row.title }}</td>
+              <td data-label="歌手">{{ row.artist }}</td>
+              <td data-label="在库">
+                <span class="tag tag--info" v-if="row.in_lib">已有</span>
+                <span class="tag" :class="'tag--' + pvStateTag(row.state)" v-else-if="row.state !== 'preview' && row.state !== 'failed'">{{ { queued: '排队', exists: '已有', failed: '失败' }[row.state] || row.state }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">共 {{ pvSongs.length }} 首，将下载 {{ pvSelCount }} 首（已入库/已有自动跳过；失败项可在下次同步时重试）</p>
+      <template #foot>
+        <button class="btn" @click="pv = false">稍后再说</button>
+        <button class="btn btn--cta" :disabled="!pvSel.length" :data-loading="committing ? 'true' : 'false'" @click="doCommit">开始下载（{{ pvSel.length }} 首）</button>
+      </template>
+    </mp-modal>
+  </div>
 </div>
 </script>
 
 <script type="text/x-template" id="tpl-organize">
-<div>
-  <h4>待整理 (_incoming)</h4>
-  <div class="mp-toolbar">
-    <el-button @click="loadIncoming">刷新列表</el-button>
-    <el-button type="primary" @click="runAll" :loading="running">一键整理全部并入库</el-button>
-    <span class="hint">自动整理开关：{{ auto ? '开（新下载完成后自动移动入库）' : '关（手动在此页整理）' }}</span>
-    <el-switch v-model="auto" @change="saveAuto"></el-switch>
+<div class="page">
+  <div class="page__hero">
+    <div class="page__no">05</div>
+    <h1><span class="rv-line"><span>整理入库</span></span></h1>
+    <p class="lede">_incoming 待整理清单、命名模板与入库扫描。</p>
   </div>
-  <el-table :data="incoming" size="small">
-    <el-table-column prop="name" label="文件" min-width="280" class-name="mono"></el-table-column>
-    <el-table-column label="大小" width="110"><template #default="s">{{ mb(s.row.size) }}</template></el-table-column>
-  </el-table>
-  <div v-if="!incoming.length" class="hint">_incoming 为空</div>
+  <div class="page__body">
+    <section class="sect">
+      <h2 class="sect__h">待整理 (_incoming)</h2>
+      <div class="bar-tools">
+        <button class="btn" @click="loadIncoming"><i v-ic="'refresh-cw'"></i>刷新列表</button>
+        <button class="btn btn--cta" :disabled="running" :data-loading="running ? 'true' : 'false'" data-cursor="Go" @click="runAll"><i v-ic="'folder'"></i>一键整理全部并入库</button>
+        <span class="hint">自动整理开关：{{ auto ? '开（新下载完成后自动移动入库）' : '关（手动在此页整理）' }}</span>
+        <button class="sw" :class="{ 'sw--on': auto }" role="switch" :aria-checked="String(!!auto)" aria-label="自动整理" @click="setAuto(!auto)"></button>
+      </div>
+      <div class="table-wrap">
+        <table class="mp-table">
+          <thead><tr><th scope="col">文件</th><th scope="col">大小</th></tr></thead>
+          <tbody>
+            <tr v-for="f in incoming" :key="f.name">
+              <td class="t-mono cell-path" data-label="文件">{{ f.name }}</td>
+              <td class="t-mono" data-label="大小">{{ mb(f.size) }}</td>
+            </tr>
+            <tr v-if="!incoming.length"><td class="cell-empty" colspan="2" data-label="文件">_incoming 为空</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-  <h4 style="margin-top:22px">命名模板</h4>
-  <div class="mp-toolbar">
-    <el-input v-model="template" style="width:420px"></el-input>
-    <el-button @click="saveTemplate">保存模板</el-button>
-  </div>
-  <div class="hint">变量：artist/album/trackNumber/title/year/quality 用双花括号包裹使用，如 {{artist}} 等</div>
-  <div class="hint">示例：artist=周杰伦 album=叶惠美 title=晴天 → <b class="mono">{{ preview }}</b></div>
+    <section class="sect">
+      <h2 class="sect__h">命名模板</h2>
+      <div class="bar-tools">
+        <input class="inp org__tpl" v-model="template" aria-label="命名模板" placeholder="{{artist}}/{{album}}/{{trackNumber}} - {{title}}">
+        <button class="btn" data-cursor="Go" @click="saveTemplate"><i v-ic="'check'"></i>保存模板</button>
+      </div>
+      <div class="hint">变量：artist/album/trackNumber/title/year/quality 用双花括号包裹使用，如 <span class="t-mono" v-pre>{{artist}}/{{album}}/{{title}}</span> 等</div>
+      <div class="hint">示例：artist=周杰伦 album=叶惠美 title=晴天 → <b class="t-mono org__preview">{{ preview }}</b></div>
+    </section>
 
-  <h4 style="margin-top:22px">入库扫描</h4>
-  <div class="mp-toolbar">
-    <el-button @click="scan">触发 Navidrome 扫描</el-button>
-    <el-button @click="refreshRclone">刷新 rclone 目录缓存</el-button>
-    <a :href="navUrl" target="_blank">打开 Navidrome</a>
-    <a :href="mtUrl" target="_blank">打开 Music Tag Web(刮削增强)</a>
+    <section class="sect">
+      <h2 class="sect__h">入库扫描</h2>
+      <div class="bar-tools">
+        <button class="btn" @click="scan"><i v-ic="'refresh-cw'"></i>触发 Navidrome 扫描</button>
+        <button class="btn" @click="refreshRclone"><i v-ic="'hard-drive'"></i>刷新 rclone 目录缓存</button>
+        <a class="btn btn--ghost" :href="navUrl" target="_blank" rel="noopener" data-cursor="Go"><i v-ic="'external-link'"></i>打开 Navidrome</a>
+        <a class="btn btn--ghost" :href="mtUrl" target="_blank" rel="noopener" data-cursor="Go"><i v-ic="'external-link'"></i>打开 Music Tag Web(刮削增强)</a>
+      </div>
+      <div class="hint" v-if="scanMsg">{{ scanMsg }}</div>
+    </section>
   </div>
-  <div v-if="scanMsg" class="hint">{{ scanMsg }}</div>
 </div>
 </script>
 
 <script type="text/x-template" id="tpl-sources">
-<div>
-  <div class="mp-toolbar">
-    <input type="file" ref="file" accept=".js" style="display:none" @change="onFile">
-    <el-button type="primary" @click="$refs.file.click()">上传自定义源 JS</el-button>
-    <el-input v-model="name" placeholder="源名称(可选)" style="width:180px"></el-input>
-    <el-button @click="upload" :loading="up">提交上传</el-button>
-    <span class="hint">源文件来自洛雪社区自定义源，本系统不内置分发</span>
+<div class="page">
+  <div class="page__hero">
+    <div class="page__no">07</div>
+    <h1><span class="rv-line"><span>音源管理</span></span></h1>
+    <p class="lede">洛雪社区自定义源：上传、启停与自测。</p>
   </div>
-  <el-table :data="list" size="small">
-    <el-table-column prop="name" label="名称" width="180"></el-table-column>
-    <el-table-column label="平台" min-width="200"><template #default="s"><span class="mono">{{ (s.row.platforms||[]).join(' ') }}</span></template></el-table-column>
-    <el-table-column label="加载" width="120"><template #default="s"><span class="dot" :class="s.row.loaded_ok ? 'dot-ok':'dot-bad'"></span>{{ s.row.loaded_ok ? '正常' : '失败' }}</template></el-table-column>
-    <el-table-column prop="last_error" label="错误" min-width="160"><template #default="s"><span class="mono">{{ clip(s.row.last_error,80) }}</span></template></el-table-column>
-    <el-table-column label="启用" width="90">
-      <template #default="s"><el-switch :model-value="!!s.row.enabled" @change="toggle(s.row)"></el-switch></template>
-    </el-table-column>
-    <el-table-column label="操作" width="220">
-      <template #default="s">
-        <el-button size="small" @click="test(s.row)" :loading="testing===s.row.id">自测</el-button>
-        <el-popconfirm title="删除该源？" @confirm="del(s.row.id)"><template #reference><el-button size="small" type="danger" plain>删除</el-button></template></el-popconfirm>
-      </template>
-    </el-table-column>
-  </el-table>
-  <div v-if="testResult" style="margin-top:12px" class="mono">{{ testResult }}</div>
+  <div class="page__body">
+    <div class="bar-tools">
+      <input type="file" ref="file" accept=".js" class="src__file" @change="onFile">
+      <button class="btn btn--cta" data-cursor="Go" @click="$refs.file.click()"><i v-ic="'upload'"></i>上传自定义源 JS</button>
+      <input class="inp src__name" v-model="name" placeholder="源名称(可选)">
+      <button class="btn" :disabled="up" :data-loading="up ? 'true' : 'false'" @click="upload">提交上传</button>
+      <span class="hint">源文件来自洛雪社区自定义源，本系统不内置分发</span>
+    </div>
+    <div class="table-wrap">
+      <table class="mp-table">
+        <thead>
+          <tr>
+            <th scope="col">名称</th>
+            <th scope="col">平台</th>
+            <th scope="col">加载</th>
+            <th scope="col">错误</th>
+            <th scope="col">启用</th>
+            <th scope="col">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="s in list" :key="s.id">
+            <td class="cell-main" data-label="名称">{{ s.name }}</td>
+            <td class="t-mono" data-label="平台">{{ fmtPlatforms(s) }}</td>
+            <td data-label="加载"><span class="dot" :class="s.loaded_ok ? 'dot--ok' : 'dot--bad'"></span>{{ s.loaded_ok ? '正常' : '失败' }}</td>
+            <td class="t-mono cell-dim" data-label="错误">{{ clip(s.last_error) }}</td>
+            <td data-label="启用"><button class="sw" :class="{ 'sw--on': !!s.enabled }" role="switch" :aria-checked="String(!!s.enabled)" :aria-label="'启用 ' + s.name" @click="toggle(s)"></button></td>
+            <td class="cell-actions" data-label="操作">
+              <button class="btn" :disabled="testing === s.id" :data-loading="testing === s.id ? 'true' : 'false'" @click="test(s)">自测</button>
+              <button class="btn btn--danger btn--ghost" @click="del(s.id)">删除</button>
+            </td>
+          </tr>
+          <tr v-if="!list.length"><td class="cell-empty" colspan="6" data-label="名称">尚未上传任何自定义源</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="src__result" v-if="testResult">
+      <span class="tag" :class="testResult.ok ? 'tag--ok' : 'tag--err'"><i class="i-arrow" v-ic="testResult.ok ? 'circle-check' : 'triangle-alert'"></i>{{ testResult.ok ? '通过' : '失败' }}</span>
+      <span class="t-mono src__steps">{{ testResult.text }}</span>
+    </div>
+  </div>
 </div>
 </script>
 
 <script type="text/x-template" id="tpl-settings">
-<div>
-  <h4>123 网盘 WebDAV</h4>
-  <el-form label-width="150px" style="max-width:560px">
-    <el-form-item label="WebDAV 地址"><el-input v-model="s.webdav_url" placeholder="http://webdav.123pan.cn"></el-input></el-form-item>
-    <el-form-item label="账号"><el-input v-model="s.webdav_user"></el-input></el-form-item>
-    <el-form-item label="密码"><el-input v-model="s.webdav_pass" type="password" show-password></el-input></el-form-item>
-    <el-form-item label="库目录(网盘内)"><el-input v-model="s.webdav_root" placeholder="/music"></el-input></el-form-item>
-    <el-form-item><el-button @click="testDav" :loading="testing">连通性自测</el-button><span class="hint" v-if="davMsg" style="margin-left:10px">{{ davMsg }}</span></el-form-item>
-  </el-form>
+<div class="page">
+  <div class="page__hero">
+    <div class="page__no">10</div>
+    <h1><span class="rv-line"><span>系统设置</span></span></h1>
+    <p class="lede">WebDAV · 下载与整理 · 自动刮削 · 外部服务。</p>
+  </div>
+  <div class="page__body set__body">
+    <section class="sect set__group set__g-style">
+      <h2 class="sect__h">外观</h2>
+      <p class="hint">明暗跟随系统，也可手动固定。选择即时生效并记住本机偏好。</p>
+      <div class="seg" role="group" aria-label="明暗模式">
+        <button type="button" class="seg__i" :aria-pressed="scheme === 'system' ? 'true' : 'false'" @click="pickScheme('system')">跟随系统</button>
+        <button type="button" class="seg__i" :aria-pressed="scheme === 'dark' ? 'true' : 'false'" @click="pickScheme('dark')">深色</button>
+        <button type="button" class="seg__i" :aria-pressed="scheme === 'light' ? 'true' : 'false'" @click="pickScheme('light')">浅色</button>
+      </div>
+    </section>
 
-  <h4>下载与整理</h4>
-  <el-form label-width="150px" style="max-width:560px">
-    <el-form-item label="默认音质">
-      <el-select v-model="s.default_quality" style="width:180px">
-        <el-option label="最高音质(自动)" value="auto"></el-option><el-option label="FLAC" value="flac"></el-option><el-option label="320k" value="320k"></el-option><el-option label="128k" value="128k"></el-option>
-      </el-select>
-    </el-form-item>
-    <el-form-item label="并发下载数"><el-input-number v-model="s.dl_concurrency" :min="1" :max="8"></el-input-number></el-form-item>
-    <el-form-item label="限速(KB/s,0不限)"><el-input-number v-model="s.dl_speed_limit_kbps" :min="0" :max="1048576" :step="128"></el-input-number></el-form-item>
-    <el-form-item label="播放缓存目标(GB)"><el-input-number v-model="s.cache_target_gb" :min="2" :max="60"></el-input-number></el-form-item>
-  </el-form>
+    <section class="sect set__group set__g-dav">
+      <h2 class="sect__h">123 网盘 WebDAV</h2>
+      <div class="field"><label class="field__lb" for="st-dav-url">WebDAV 地址</label><input class="inp" id="st-dav-url" v-model="s.webdav_url" placeholder="http://webdav.123pan.cn"></div>
+      <div class="field"><label class="field__lb" for="st-dav-user">账号</label><input class="inp" id="st-dav-user" v-model="s.webdav_user"></div>
+      <div class="field"><label class="field__lb" for="st-dav-pass">密码</label><input class="inp" id="st-dav-pass" type="password" v-model="s.webdav_pass" autocomplete="off"></div>
+      <div class="field"><label class="field__lb" for="st-dav-root">库目录(网盘内)</label><input class="inp" id="st-dav-root" v-model="s.webdav_root" placeholder="/music"></div>
+      <div class="bar-tools">
+        <button class="btn" :disabled="testing" :data-loading="testing ? 'true' : 'false'" @click="testDav"><i v-ic="'gauge'"></i>连通性自测</button>
+        <span class="hint" v-if="davMsg"><i class="i-arrow" v-ic="davMsg.ok ? 'circle-check' : 'triangle-alert'"></i>{{ davMsg.text }}</span>
+      </div>
+    </section>
 
-  <h4>下载自动刮削 (Music Tag Web)</h4>
-  <el-form label-width="150px" style="max-width:560px">
-    <el-form-item label="整理后自动刮削"><el-switch v-model="autoScrape"></el-switch><span class="hint" style="margin-left:12px">入库后自动调用 MTW 补全/校正标签与封面</span></el-form-item>
-    <el-form-item label="刮削源(逗号分隔)"><el-input v-model="s.mt_sources" placeholder="netease 或 netease,qmusic,migu"></el-input></el-form-item>
-    <el-form-item label="MTW媒体库根路径"><el-input v-model="s.mt_media_root" placeholder="/app/media"></el-input></el-form-item>
-  </el-form>
+    <section class="sect set__group set__g-dl">
+      <h2 class="sect__h">下载与整理</h2>
+      <div class="field"><label class="field__lb" for="st-quality">默认音质</label>
+        <select class="sel" id="st-quality" v-model="s.default_quality">
+          <option value="auto">最高音质(自动)</option>
+          <option value="flac">FLAC</option>
+          <option value="320k">320k</option>
+          <option value="128k">128k</option>
+        </select>
+      </div>
+      <div class="field"><label class="field__lb" for="st-conc">并发下载数</label>
+        <div class="num">
+          <input class="num__inp" id="st-conc" type="number" v-model.number="s.dl_concurrency" min="1" max="8" step="1">
+          <button class="num__btn num__btn--dec" aria-label="减少" @click="stepNum('dl_concurrency', -1, 1, 8, 1)"><i v-ic="'plus'"></i></button>
+          <button class="num__btn num__btn--inc" aria-label="增加" @click="stepNum('dl_concurrency', 1, 1, 8, 1)"><i v-ic="'plus'"></i></button>
+        </div>
+      </div>
+      <div class="field"><label class="field__lb" for="st-speed">限速(KB/s,0不限)</label>
+        <div class="num">
+          <input class="num__inp" id="st-speed" type="number" v-model.number="s.dl_speed_limit_kbps" min="0" max="1048576" step="128">
+          <button class="num__btn num__btn--dec" aria-label="减少" @click="stepNum('dl_speed_limit_kbps', -128, 0, 1048576, 128)"><i v-ic="'plus'"></i></button>
+          <button class="num__btn num__btn--inc" aria-label="增加" @click="stepNum('dl_speed_limit_kbps', 128, 0, 1048576, 128)"><i v-ic="'plus'"></i></button>
+        </div>
+      </div>
+      <div class="field"><label class="field__lb" for="st-cache">播放缓存目标(GB)</label>
+        <div class="num">
+          <input class="num__inp" id="st-cache" type="number" v-model.number="s.cache_target_gb" min="2" max="60" step="1">
+          <button class="num__btn num__btn--dec" aria-label="减少" @click="stepNum('cache_target_gb', -1, 2, 60, 1)"><i v-ic="'plus'"></i></button>
+          <button class="num__btn num__btn--inc" aria-label="增加" @click="stepNum('cache_target_gb', 1, 2, 60, 1)"><i v-ic="'plus'"></i></button>
+        </div>
+      </div>
+    </section>
 
-  <h4>外部服务</h4>
-  <el-form label-width="150px" style="max-width:560px">
-    <el-form-item label="Navidrome 账号"><el-input v-model="s.nav_user" placeholder="管理员用户名"></el-input></el-form-item>
-    <el-form-item label="Navidrome 密码"><el-input v-model="s.nav_pass" type="password" show-password></el-input></el-form-item>
-    <el-form-item label="MusicTag 用户名"><el-input v-model="s.mt_user"></el-input></el-form-item>
-    <el-form-item label="MusicTag 密码"><el-input v-model="s.mt_pass" type="password" show-password></el-input></el-form-item>
-    <el-form-item><el-button @click="testMt" :loading="mtTesting">MTW 连通与登录自测</el-button><span class="hint" v-if="mtMsg" style="margin-left:10px">{{ mtMsg }}</span></el-form-item>
-  </el-form>
+    <section class="sect set__group set__g-scrape">
+      <h2 class="sect__h">下载自动刮削 (Music Tag Web)</h2>
+      <div class="field field--inline">
+        <span class="field__lb">整理后自动刮削</span>
+        <button class="sw" :class="{ 'sw--on': autoScrape }" role="switch" :aria-checked="String(autoScrape)" aria-label="整理后自动刮削" @click="autoScrape = !autoScrape"></button>
+        <span class="hint">入库后自动调用 MTW 补全/校正标签与封面</span>
+      </div>
+      <div class="field"><label class="field__lb" for="st-mt-sources">刮削源(逗号分隔)</label><input class="inp" id="st-mt-sources" v-model="s.mt_sources" placeholder="netease 或 netease,qmusic,migu"></div>
+      <div class="field"><label class="field__lb" for="st-mt-root">MTW媒体库根路径</label><input class="inp" id="st-mt-root" v-model="s.mt_media_root" placeholder="/app/media"></div>
+    </section>
 
-  <el-button type="primary" @click="save" :loading="saving">保存全部设置</el-button>
-  <span class="hint" v-if="saved" style="margin-left:10px">已保存</span>
+    <section class="sect set__group set__g-ext">
+      <h2 class="sect__h">外部服务</h2>
+      <div class="field"><label class="field__lb" for="st-nav-user">Navidrome 账号</label><input class="inp" id="st-nav-user" v-model="s.nav_user" placeholder="管理员用户名"></div>
+      <div class="field"><label class="field__lb" for="st-nav-pass">Navidrome 密码</label><input class="inp" id="st-nav-pass" type="password" v-model="s.nav_pass" autocomplete="off"></div>
+      <div class="field"><label class="field__lb" for="st-mt-user">MusicTag 用户名</label><input class="inp" id="st-mt-user" v-model="s.mt_user"></div>
+      <div class="field"><label class="field__lb" for="st-mt-pass">MusicTag 密码</label><input class="inp" id="st-mt-pass" type="password" v-model="s.mt_pass" autocomplete="off"></div>
+      <div class="bar-tools">
+        <button class="btn" :disabled="mtTesting" :data-loading="mtTesting ? 'true' : 'false'" @click="testMt"><i v-ic="'gauge'"></i>MTW 连通与登录自测</button>
+        <span class="hint" v-if="mtMsg"><i class="i-arrow" v-ic="mtMsg.ok ? 'circle-check' : 'triangle-alert'"></i>{{ mtMsg.text }}</span>
+      </div>
+    </section>
+
+    <div class="bar-tools set__save">
+      <button class="btn btn--cta" :disabled="saving" :data-loading="saving ? 'true' : 'false'" data-cursor="Go" @click="save"><i v-ic="'check'"></i>保存全部设置</button>
+      <span class="hint tag tag--ok" v-if="saved">已保存</span>
+    </div>
+  </div>
 </div>
 </script>
 
 <script type="text/x-template" id="tpl-appusers">
-<div>
-  <div class="mp-toolbar">
-    <el-button type="primary" @click="openCreate">新增用户</el-button>
-    <el-button @click="load" :loading="loading">刷新</el-button>
-    <span class="hint">统一账号体系：管理员可登录控制台+App；普通用户仅可登录 App。首个注册用户自动成为管理员</span>
+<div class="page">
+  <div class="page__hero">
+    <div class="page__no">08</div>
+    <h1><span class="rv-line"><span>用户管理</span></span></h1>
+    <p class="lede">统一账号体系：控制台与 App 共用。</p>
   </div>
-  <el-table :data="list" size="small" v-loading="loading">
-    <el-table-column prop="id" label="ID" width="70"></el-table-column>
-    <el-table-column prop="username" label="用户名" min-width="160"></el-table-column>
-    <el-table-column label="角色" width="110">
-      <template #default="s">
-        <el-tag :type="s.row.role==='admin' ? 'danger' : 'info'" size="small">{{ s.row.role==='admin' ? '管理员' : '普通用户' }}</el-tag>
-      </template>
-    </el-table-column>
-    <el-table-column label="创建时间" width="180"><template #default="s">{{ fmtTs(s.row.created_at || s.row.createdAt) }}</template></el-table-column>
-    <el-table-column label="操作" width="180">
-      <template #default="s">
-        <el-button size="small" @click="openEdit(s.row)">编辑</el-button>
-        <el-popconfirm title="删除该用户？其会话将同时失效" @confirm="del(s.row)"><template #reference><el-button size="small" type="danger" plain>删除</el-button></template></el-popconfirm>
-      </template>
-    </el-table-column>
-  </el-table>
-  <el-pagination style="margin-top:12px" layout="prev, pager, next, total" :total="total" :page-size="limit" :current-page="page" @current-change="gotoPage"></el-pagination>
+  <div class="page__body">
+    <div class="bar-tools">
+      <button class="btn btn--cta" data-cursor="Go" @click="openCreate"><i v-ic="'plus'"></i>新增用户</button>
+      <button class="btn" :disabled="loading" :data-loading="loading ? 'true' : 'false'" @click="load()"><i v-ic="'refresh-cw'"></i>刷新</button>
+      <span class="hint">统一账号体系：管理员可登录控制台+App；普通用户仅可登录 App。首个注册用户自动成为管理员</span>
+    </div>
+    <div class="table-wrap">
+      <table class="mp-table" :class="{ 'mp-table--busy': loading }">
+        <thead>
+          <tr><th scope="col">ID</th><th scope="col">用户名</th><th scope="col">角色</th><th scope="col">创建时间</th><th scope="col">操作</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="u in list" :key="u.id">
+            <td class="t-mono" data-label="ID">{{ u.id }}</td>
+            <td class="cell-main" data-label="用户名">{{ u.username }}</td>
+            <td data-label="角色"><span class="tag" :class="u.role === 'admin' ? 'tag--err' : 'tag--info'">{{ u.role === 'admin' ? '管理员' : '普通用户' }}</span></td>
+            <td class="t-mono" data-label="创建时间">{{ fmtTs(u.created_at || u.createdAt) }}</td>
+            <td class="cell-actions" data-label="操作">
+              <button class="btn" data-cursor="Open" @click="openEdit(u)">编辑</button>
+              <button class="btn btn--danger btn--ghost" @click="del(u)">删除</button>
+            </td>
+          </tr>
+          <tr v-if="!list.length && !loading"><td class="cell-empty" colspan="5" data-label="ID">暂无用户</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager" v-if="pages > 0">
+      <button class="pager__btn" :disabled="page <= 1" @click="gotoPage(page - 1)"><i class="i-arrow" v-ic="'chevron-left'"></i>上一页</button>
+      <button class="pager__btn" v-for="p in pageList" :key="p" :class="{ 'pager__cur': p === page }" :aria-current="p === page ? 'page' : undefined" @click="gotoPage(p)">{{ p }}</button>
+      <button class="pager__btn" :disabled="page >= pages" @click="gotoPage(page + 1)">下一页<i class="i-arrow" v-ic="'chevron-right'"></i></button>
+      <span class="pager__sum">共 {{ total }} 条</span>
+    </div>
 
-  <el-dialog v-model="dlg" :title="editing ? '编辑用户' : '新增用户'" width="420px" destroy-on-close>
-    <el-form label-width="90px">
-      <el-form-item label="用户名"><el-input v-model="form.username" :disabled="editing" placeholder="3-32位，字母/数字/下划线/中文"></el-input></el-form-item>
-      <el-form-item label="密码"><el-input v-model="form.password" type="password" show-password :placeholder="editing ? '留空则不修改' : '至少6位'"></el-input></el-form-item>
-      <el-form-item label="角色">
-        <el-select v-model="form.role" style="width:100%">
-          <el-option label="普通用户" value="user"></el-option>
-          <el-option label="管理员" value="admin"></el-option>
-        </el-select>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="dlg=false">取消</el-button>
-      <el-button type="primary" @click="submit" :loading="saving">确定</el-button>
-    </template>
-  </el-dialog>
+    <mp-modal v-if="dlg" :title="editing ? '编辑用户' : '新增用户'" @close="dlg = false">
+      <div class="field"><label class="field__lb" for="au-user">用户名</label><input class="inp" id="au-user" v-model="form.username" :disabled="!!editing" placeholder="3-32位，字母/数字/下划线/中文"></div>
+      <div class="field"><label class="field__lb" for="au-pass">密码</label><input class="inp" id="au-pass" type="password" v-model="form.password" autocomplete="new-password" :placeholder="editing ? '留空则不修改' : '至少6位'"></div>
+      <div class="field"><label class="field__lb" for="au-role">角色</label>
+        <select class="sel" id="au-role" v-model="form.role"><option value="user">普通用户</option><option value="admin">管理员</option></select>
+      </div>
+      <template #foot>
+        <button class="btn" @click="dlg = false">取消</button>
+        <button class="btn btn--cta" :disabled="saving" :data-loading="saving ? 'true' : 'false'" @click="submit">确定</button>
+      </template>
+    </mp-modal>
+  </div>
 </div>
 </script>
 
 <script type="text/x-template" id="tpl-releases">
-<div>
-  <div class="mp-toolbar">
-    <el-button type="primary" @click="openUpload">上传 APK 发布</el-button>
-    <el-button @click="load" :loading="loading">刷新</el-button>
-    <span class="hint">App「检查更新」取 versionCode 最大的一条；下载需登录会话</span>
+<div class="page">
+  <div class="page__hero">
+    <div class="page__no">09</div>
+    <h1><span class="rv-line"><span>App 发布</span></span></h1>
+    <p class="lede">APK 版本墙：检查更新源与下载分发。</p>
   </div>
-  <el-table :data="list" size="small" v-loading="loading">
-    <el-table-column prop="versionName" label="版本名" width="110"></el-table-column>
-    <el-table-column prop="versionCode" label="版本号" width="90"></el-table-column>
-    <el-table-column label="大小" width="100"><template #default="s">{{ mb(s.row.size) }}</template></el-table-column>
-    <el-table-column label="MD5" min-width="180"><template #default="s"><span class="mono">{{ clip(s.row.md5, 32) }}</span></template></el-table-column>
-    <el-table-column prop="changelog" label="更新说明" min-width="200"><template #default="s">{{ clip(s.row.changelog, 60) }}</template></el-table-column>
-    <el-table-column label="发布时间" width="170"><template #default="s">{{ fmtTs(s.row.createdAt) }}</template></el-table-column>
-    <el-table-column label="操作" width="170">
-      <template #default="s">
-        <a :href="s.row.downloadUrl" style="margin-right:10px"><el-button size="small">下载</el-button></a>
-        <el-popconfirm title="删除该发布？APK 文件一并删除" @confirm="del(s.row)"><template #reference><el-button size="small" type="danger" plain>删除</el-button></template></el-popconfirm>
-      </template>
-    </el-table-column>
-  </el-table>
+  <div class="page__body">
+    <div class="bar-tools">
+      <button class="btn btn--cta" data-cursor="Go" @click="openUpload"><i v-ic="'upload'"></i>上传 APK 发布</button>
+      <button class="btn" :disabled="loading" :data-loading="loading ? 'true' : 'false'" @click="load"><i v-ic="'refresh-cw'"></i>刷新</button>
+      <span class="hint">App「检查更新」取 versionCode 最大的一条；下载需登录会话</span>
+    </div>
 
-  <el-dialog v-model="dlg" title="上传 APK 发布" width="460px" destroy-on-close>
-    <el-form label-width="90px">
-      <el-form-item label="版本名"><el-input v-model="form.versionName" placeholder="如 1.1.0"></el-input></el-form-item>
-      <el-form-item label="版本号"><el-input-number v-model="form.versionCode" :min="1" :step="1" controls-position="right" style="width:160px"></el-input-number><span class="hint" style="margin-left:8px">整数，需大于现有最大</span></el-form-item>
-      <el-form-item label="APK 文件">
-        <input type="file" ref="file" accept=".apk" style="display:none" @change="onFile">
-        <el-button @click="$refs.file.click()">选择文件</el-button>
-        <span class="hint" style="margin-left:8px">{{ fileName || '未选择（≤300MB，.apk）' }}</span>
-      </el-form-item>
-      <el-form-item label="更新说明"><el-input v-model="form.changelog" type="textarea" :rows="3" placeholder="本次更新内容（可选）"></el-input></el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="dlg=false">取消</el-button>
-      <el-button type="primary" @click="upload" :loading="uploading" :disabled="!picked">上传发布</el-button>
-    </template>
-  </el-dialog>
+    <section class="rel-pin" v-if="list.length">
+      <div class="rel-wall" data-pin-x ref="wall">
+        <div class="rel-wall__track">
+          <article class="rel-card" v-for="(r, i) in list" :key="r.id">
+            <header class="rel-card__head">
+              <span class="rel-card__idx t-mono">{{ String(list.length - i).padStart(2, '0') }}</span>
+              <span class="tag tag--accent" v-if="i === 0">当前发布</span>
+            </header>
+            <div class="rel-card__ver t-mono">{{ r.versionName }}</div>
+            <div class="rel-card__code t-mono">CODE {{ r.versionCode }}</div>
+            <dl class="rel-card__meta">
+              <div><dt>大小</dt><dd class="t-mono">{{ mb(r.size) }}</dd></div>
+              <div><dt>MD5</dt><dd class="t-mono">{{ clipMd5(r.md5) }}</dd></div>
+              <div><dt>发布</dt><dd class="t-mono">{{ fmtTs(r.createdAt) }}</dd></div>
+            </dl>
+            <p class="rel-card__log">{{ clipLog(r.changelog) }}</p>
+            <footer class="rel-card__foot">
+              <a class="btn" :href="r.downloadUrl" data-cursor="Go"><i v-ic="'download'"></i>下载</a>
+              <button class="btn btn--danger btn--ghost" @click="del(r)">删除</button>
+            </footer>
+          </article>
+        </div>
+      </div>
+    </section>
+    <div class="empty" v-else-if="!loading">
+      <p>尚无发布记录。点击「上传 APK 发布」创建第一个版本。</p>
+    </div>
+
+    <mp-modal v-if="dlg" title="上传 APK 发布" @close="dlg = false">
+      <div class="field"><label class="field__lb" for="rl-name">版本名</label><input class="inp" id="rl-name" v-model="form.versionName" placeholder="如 1.1.0"></div>
+      <div class="field">
+        <label class="field__lb" for="rl-code">版本号</label>
+        <div class="num num--code">
+          <input class="num__inp" id="rl-code" type="number" v-model.number="form.versionCode" min="1" step="1">
+          <button class="num__btn num__btn--dec" aria-label="减少" @click="stepCode(-1)"><i v-ic="'plus'"></i></button>
+          <button class="num__btn num__btn--inc" aria-label="增加" @click="stepCode(1)"><i v-ic="'plus'"></i></button>
+        </div>
+        <span class="hint">整数，需大于现有最大</span>
+      </div>
+      <div class="field">
+        <label class="field__lb" for="rl-file">APK 文件</label>
+        <input type="file" id="rl-file" ref="file" accept=".apk" class="src__file" @change="onFile">
+        <div class="bar-tools">
+          <button class="btn" type="button" @click="$refs.file.click()"><i v-ic="'file-archive'"></i>选择文件</button>
+          <span class="hint">{{ fileName || '未选择（≤300MB，.apk）' }}</span>
+        </div>
+      </div>
+      <div class="field"><label class="field__lb" for="rl-log">更新说明</label><textarea class="ta" id="rl-log" rows="3" v-model="form.changelog" placeholder="本次更新内容（可选）"></textarea></div>
+      <template #foot>
+        <button class="btn" @click="dlg = false">取消</button>
+        <button class="btn btn--cta" :disabled="!picked || uploading" :data-loading="uploading ? 'true' : 'false'" @click="upload">上传发布</button>
+      </template>
+    </mp-modal>
+  </div>
 </div>
 </script>
 
 <script type="text/x-template" id="tpl-shell">
-<div class="mp-layout">
-  <div class="mp-side">
-    <div class="mp-logo">🎵 <span>MusicPipe</span></div>
-    <nav class="mp-menu">
-      <a v-for="m in menus" :key="m.k" :class="{active: route===m.k}" @click="go(m.k)">{{ m.icon }} <span v-if="route===m.k">{{ m.label }}</span><span v-else>{{ m.label }}</span></a>
+<div class="shell">
+  <header class="nav" ref="nav">
+    <a class="nav__wordmark" href="#dashboard" data-magnet data-cursor="Go" @click="go('dashboard')">MusicPipe</a>
+    <span class="nav__now">{{ navNow }}</span>
+    <nav aria-label="主导航">
+      <a v-for="(m, i) in menus" :key="m.k" class="nav__link" :class="{ 'nav__link--active': route === m.k }" :href="'#' + m.k" @click="go(m.k)">
+        <span class="nav__idx">{{ String(i + 1).padStart(2, '0') }}</span>
+        <i class="i-arrow" v-ic="m.icon"></i>
+        <span class="nav__txt">{{ m.label }}</span>
+      </a>
     </nav>
-    <div style="padding:12px 14px;font-size:12px;color:#8492a6">
-      <span class="dot" :class="wsOk?'dot-ok':'dot-bad'"></span>{{ wsOk ? '实时连接' : '连接断开' }}
-      <div v-if="who" style="margin-top:8px;color:#5a6b7f">👤 {{ who }}（管理员）</div>
-      <a style="color:#a7b3c2;display:block;margin-top:8px;cursor:pointer" @click="logout">退出登录</a>
+    <span class="nav__ws"><span class="dot" :class="wsOk ? 'dot--ok' : 'dot--bad'"></span><span class="nav__ws-txt">{{ wsOk ? '实时连接' : '连接断开' }}</span></span>
+    <span class="nav__user" v-if="who"><i class="i-arrow" v-ic="'user'"></i>{{ who }}（管理员）</span>
+    <a class="nav__out" @click="logout"><i class="i-arrow" v-ic="'log-out'"></i>退出</a>
+    <button type="button" class="nav__toggle" ref="toggle" :aria-expanded="navOpen ? 'true' : 'false'" aria-controls="mp-navmenu" @click="toggleNav"><i class="i-arrow" v-ic="'menu'"></i><span class="nav__toggle-txt">菜单</span></button>
+  </header>
+
+  <!-- 窄屏全屏导航抽屉：10 项一次看全（桌面导航条在 ≤760px 折叠到这里，不再横向滚动裁切） -->
+  <div class="navmenu" :class="{ 'navmenu--open': navOpen }" :aria-hidden="navOpen ? 'false' : 'true'">
+    <div class="navmenu__panel" id="mp-navmenu" role="dialog" aria-modal="true" aria-label="主导航">
+      <div class="navmenu__head">
+        <span class="navmenu__brand">MusicPipe · 导航</span>
+        <button type="button" class="btn btn--icon" aria-label="关闭菜单" @click="closeNav"><i v-ic="'x'"></i></button>
+      </div>
+      <nav class="navmenu__list" aria-label="主导航（移动端）">
+        <a v-for="(m, i) in menus" :key="'nm-' + m.k" class="navmenu__link" :class="{ 'navmenu__link--active': route === m.k }" :href="'#' + m.k" @click="go(m.k)" @keydown.esc="closeNav">
+          <span class="navmenu__idx">{{ String(i + 1).padStart(2, '0') }}</span>
+          <i class="i-arrow" v-ic="m.icon"></i>
+          <span class="navmenu__txt">{{ m.label }}</span>
+        </a>
+      </nav>
+      <div class="navmenu__foot">
+        <span class="navmenu__ws"><span class="dot" :class="wsOk ? 'dot--ok' : 'dot--bad'"></span>{{ wsOk ? '实时连接' : '连接断开' }}</span>
+        <span class="navmenu__user" v-if="who"><i class="i-arrow" v-ic="'user'"></i>{{ who }}</span>
+        <a class="navmenu__out" @click="logout"><i class="i-arrow" v-ic="'log-out'"></i>退出登录</a>
+      </div>
     </div>
   </div>
-  <div class="mp-main">
+  <main>
     <component :is="'page-' + route"></component>
+  </main>
+  <footer class="foot">
+    <div class="foot__meta"><span>MusicPipe Console · music.example.com</span><span class="t-mono">{{ year }}</span></div>
+  </footer>
+</div>
+</script>
+
+<script type="text/x-template" id="tpl-modal">
+<div class="mp-modal" @keydown.esc.stop="$emit('close')" tabindex="-1" ref="panel">
+  <div class="mp-modal__scrim" @click="$emit('close')"></div>
+  <div class="mp-modal__panel" :class="{ 'mp-modal__panel--wide': wide }" role="dialog" aria-modal="true">
+    <div class="mp-modal__head">
+      <span class="mp-modal__title">{{ title }}</span>
+      <button class="btn btn--icon" aria-label="关闭" @click="$emit('close')"><i v-ic="'x'"></i></button>
+    </div>
+    <div class="mp-modal__body"><slot></slot></div>
+    <div class="mp-modal__foot"><slot name="foot"></slot></div>
   </div>
 </div>
 </script>
 
+<script type="text/x-template" id="tpl-toasts">
+<div class="mp-toast" aria-live="polite">
+  <div class="mp-toast__item" :class="'mp-toast__item--' + t.kind" v-for="t in list" :key="t.id" :data-tid="t.id">
+    <i class="i-arrow" v-ic="t.kind === 'ok' ? 'circle-check' : (t.kind === 'warn' ? 'triangle-alert' : 'circle-alert')"></i>
+    <span>{{ t.msg }}</span>
+  </div>
+</div>
+</script>
+
+<script src="/vendor/vue.global.prod.js"></script>
+<script src="/assets/icons.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

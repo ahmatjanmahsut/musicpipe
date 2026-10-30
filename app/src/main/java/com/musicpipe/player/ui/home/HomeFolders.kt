@@ -25,7 +25,10 @@ enum class HomeAxis(val label: String) {
     PLAYLISTS("歌单"),
 
     /** 专辑轴：曲库按专辑聚合 + 未分类兜底，不可管理（它是曲库投影）。 */
-    ALBUMS("专辑")
+    ALBUMS("专辑"),
+
+    /** 艺人轴：曲库按 artist 聚合，空艺人名归入未知艺人。 */
+    ARTISTS("艺人")
 }
 
 /**
@@ -55,7 +58,7 @@ data class HomeFolder(
      */
     val shareId: String? = null
 ) {
-    enum class Kind { SHARE, ALBUM, UNCATEGORIZED }
+    enum class Kind { SHARE, ALBUM, ARTIST, UNCATEGORIZED }
 }
 
 object HomeFolders {
@@ -110,6 +113,21 @@ object HomeFolders {
         return folders
     }
 
+    /** 艺人轴：按艺人名排序，空艺人名归入「未知艺人」，不丢歌。 */
+    fun buildArtists(songs: List<Song>): List<HomeFolder> {
+        val folders = songs.groupBy { it.artist.trim() }
+            .filterKeys { it.isNotEmpty() }
+            .toSortedMap(compareBy { it.lowercase() })
+            .map { (artist, list) ->
+                HomeFolder(id = "artist:" + artist, title = artist, kind = HomeFolder.Kind.ARTIST, songs = list)
+            }.toMutableList()
+        val unknown = songs.filter { it.artist.isBlank() }
+        if (unknown.isNotEmpty()) {
+            folders += HomeFolder(id = "__unknown_artist__", title = "未知艺人", kind = HomeFolder.Kind.ARTIST, songs = unknown)
+        }
+        return folders
+    }
+
     /**
      * 两个轴拼接（歌单在前，专辑在后）。
      *
@@ -140,12 +158,14 @@ object HomeFolders {
      * 该轴空了就自动切到另一个有内容的轴 —— 否则用户会看到一个空首页，
      * 以为曲库/歌单丢了。两轴都空时保持原选择。
      */
-    fun resolveAxis(current: HomeAxis, hasPlaylists: Boolean, hasAlbums: Boolean): HomeAxis =
+    fun resolveAxis(current: HomeAxis, hasPlaylists: Boolean, hasAlbums: Boolean, hasArtists: Boolean = hasAlbums): HomeAxis =
         when {
             current == HomeAxis.PLAYLISTS && hasPlaylists -> HomeAxis.PLAYLISTS
             current == HomeAxis.ALBUMS && hasAlbums -> HomeAxis.ALBUMS
+            current == HomeAxis.ARTISTS && hasArtists -> HomeAxis.ARTISTS
             hasPlaylists -> HomeAxis.PLAYLISTS
             hasAlbums -> HomeAxis.ALBUMS
+            hasArtists -> HomeAxis.ARTISTS
             else -> current
         }
 }
@@ -162,6 +182,7 @@ fun buildFolderGrid(axis: HomeAxis, collections: List<HomeCollection>, library: 
     val folders = when (axis) {
         HomeAxis.PLAYLISTS -> HomeFolders.buildPlaylists(collections)
         HomeAxis.ALBUMS -> HomeFolders.buildAlbums(library)
+        HomeAxis.ARTISTS -> HomeFolders.buildArtists(library)
     }
     return folders.map { folder ->
         HomeFolderGrid(

@@ -24,8 +24,8 @@ const md5 = b => require('crypto').createHash('md5').update(b).digest('hex');
   Check('upload-release', up.ok && upb.versionCode === 999 && upb.md5 === exp, JSON.stringify(upb).slice(0, 160));
   rid = upb.id;
   // 2 latest = 999 (as normal user session)
-  const reg = await fetch(base + '/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'e2en' + Date.now() % 99999, password: 'test123456' }) });
-  const ckB = await login((await reg.json()).username, 'test123456');
+  const reg = await fetch(base + '/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'e2en' + Date.now() % 99999, password: 'demo123456' }) });
+  const ckB = await login((await reg.json()).username, 'demo123456');
   const lat = await (await fetch(base + '/api/app/update/latest', { headers: { cookie: ckB } })).json();
   Check('latest-is-999', lat.versionCode === 999 && lat.downloadUrl.includes('versionCode=999'), JSON.stringify(lat).slice(0, 120));
   // 3 download + md5

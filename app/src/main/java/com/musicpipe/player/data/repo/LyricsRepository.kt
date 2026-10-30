@@ -52,21 +52,30 @@ class LyricsRepository(
             size > CACHE_MAX
     }
 
-    suspend fun fetch(song: Song): LyricsResult {
+    suspend fun fetch(song: Song): LyricsResult = fetchById(song.id)
+
+    /**
+     * v1.16.0：按 id 取歌词（车载歌词引擎用）。
+     *
+     * 车载歌词跑在 PlaybackService 里，手上只有"当前 MediaItem 的 mediaId"，
+     * 没有完整的 [Song]；而这一层缓存/网络本来也只需要 id。
+     * 于是把入口下沉成 id，UI 侧继续用 [fetch] 这个更自然的签名。
+     */
+    suspend fun fetchById(songId: String): LyricsResult {
         // L1：内存
-        synchronized(cache) { cache[song.id] }?.let { return LyricsResult.Found(it, "cache") }
+        synchronized(cache) { cache[songId] }?.let { return LyricsResult.Found(it, "cache") }
 
         // L2：SQLite 落盘缓存
-        readDisk(song.id)?.let { lines ->
-            synchronized(cache) { cache[song.id] = lines }
+        readDisk(songId)?.let { lines ->
+            synchronized(cache) { cache[songId] = lines }
             return LyricsResult.Found(lines, "disk")
         }
 
         // L3：网络
-        return fetchRemote(song).also { result ->
+        return fetchRemote(songId).also { result ->
             if (result is LyricsResult.Found) {
-                synchronized(cache) { cache[song.id] = result.lines }
-                writeDisk(song.id, result)
+                synchronized(cache) { cache[songId] = result.lines }
+                writeDisk(songId, result)
             }
         }
     }
@@ -117,8 +126,8 @@ class LyricsRepository(
         Unit
     }
 
-    private suspend fun fetchRemote(song: Song): LyricsResult = try {
-        val response = api.lyrics(song.id)
+    private suspend fun fetchRemote(songId: String): LyricsResult = try {
+        val response = api.lyrics(songId)
         if (response.isSuccessful) {
             val dto = response.body()
             val fromLines = dto?.lines.orEmpty()

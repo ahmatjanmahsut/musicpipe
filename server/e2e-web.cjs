@@ -4,9 +4,9 @@ const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const BASE = 'http://127.0.0.1:7800';
 const PORT = 9333;
-const SHOTS = 'docs/shots';
-const PROFILE = '.tmp/edge-e2e';
-const APK = '.tmp/e2e-ui-888.apk';
+const SHOTS = '/path/to/musicpipe/docs/shots';
+const PROFILE = '/path/to/musicpipe/.tmp/edge-e2e';
+const APK = '/path/to/musicpipe/.tmp/e2e-ui-888.apk';
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let pass = 0, fail = 0;
@@ -15,7 +15,7 @@ function Check(n, c, x) { if (c) { pass++; lines.push('PASS ' + n + ' ' + (x || 
 
 (async () => {
   fs.mkdirSync(SHOTS, { recursive: true });
-  fs.mkdirSync('.tmp', { recursive: true });
+  fs.mkdirSync('/path/to/musicpipe/.tmp', { recursive: true });
   const bytes = Buffer.alloc(3000); for (let i = 0; i < 3000; i++) bytes[i] = (i * 7) % 251;
   fs.writeFileSync(APK, bytes);
 
@@ -90,7 +90,7 @@ function Check(n, c, x) { if (c) { pass++; lines.push('PASS ' + n + ' ' + (x || 
     // S5 create user via dialog
     await clickByText('.toolbar button', '新增用户');
     await waitFor(dlgOpen('新增用户'), 10000, 'add dialog');
-    await ev("(function(){var dlg=" + findDlg('新增用户') + "; var ins=dlg.querySelectorAll('input'); ins[0].value='webtest1'; ins[0].dispatchEvent(new Event('input',{bubbles:true})); ins[1].value='test123456'; ins[1].dispatchEvent(new Event('input',{bubbles:true})); return true;})()");
+    await ev("(function(){var dlg=" + findDlg('新增用户') + "; var ins=dlg.querySelectorAll('input'); ins[0].value='webtest1'; ins[0].dispatchEvent(new Event('input',{bubbles:true})); ins[1].value='demo123456'; ins[1].dispatchEvent(new Event('input',{bubbles:true})); return true;})()");
     await ev("(function(){var dlg=" + findDlg('新增用户') + "; [].slice.call(dlg.querySelectorAll('button')).find(function(b){return b.textContent.replace(/\\s+/g,'')==='创建';}).click(); return true;})()");
     await waitFor(noDialog, 10000, 'add dialog closed');
     await waitFor("document.querySelector('.el-table__body').textContent.indexOf('webtest1')>=0", 10000, 'webtest1 row');
@@ -160,7 +160,7 @@ function Check(n, c, x) { if (c) { pass++; lines.push('PASS ' + n + ' ' + (x || 
     // S12 register normal user -> dashboard, admin menu hidden
     await clickByText('.el-tabs__item', '注册');
     await sleep(400);
-    await ev("(function(){var pane=[].slice.call(document.querySelectorAll('.el-tab-pane')).find(function(p){return getComputedStyle(p).display!=='none';}); var ins=pane.querySelectorAll('input'); ins[0].value='uicheck1'; ins[0].dispatchEvent(new Event('input',{bubbles:true})); ins[1].value='test123456'; ins[1].dispatchEvent(new Event('input',{bubbles:true})); ins[2].value='test123456'; ins[2].dispatchEvent(new Event('input',{bubbles:true})); return true;})()");
+    await ev("(function(){var pane=[].slice.call(document.querySelectorAll('.el-tab-pane')).find(function(p){return getComputedStyle(p).display!=='none';}); var ins=pane.querySelectorAll('input'); ins[0].value='uicheck1'; ins[0].dispatchEvent(new Event('input',{bubbles:true})); ins[1].value='demo123456'; ins[1].dispatchEvent(new Event('input',{bubbles:true})); ins[2].value='demo123456'; ins[2].dispatchEvent(new Event('input',{bubbles:true})); return true;})()");
     await clickByText('.el-tab-pane button', '注册');
     await waitFor("location.pathname==='/dashboard'", 15000, 'user->dashboard');
     const menu2 = await ev("[].slice.call(document.querySelectorAll('.el-menu-item')).map(function(e){return e.textContent.trim();}).join('|')");

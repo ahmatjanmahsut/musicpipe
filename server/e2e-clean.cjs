@@ -1,4 +1,4 @@
-const db = require('better-sqlite3')('server/data/musicpipe.db');
+const db = require('better-sqlite3')('/path/to/musicpipe/server/data/musicpipe.db');
 const r = db.prepare("DELETE FROM users WHERE username LIKE 'e2e%' OR username IN ('webtest1','uicheck1')").run();
 console.log('deleted users:', r.changes);
 const rel = db.prepare('DELETE FROM app_releases WHERE version_code=888').run();

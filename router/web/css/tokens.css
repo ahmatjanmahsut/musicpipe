@@ -1,0 +1,172 @@
+/* ==========================================================================
+   MusicPipe 控制台 · tokens.css  （v1.16.1 · 按 FRONTEND_GUIDE.md 重做）
+
+   本文件是**全站唯一的数值来源**：颜色 / 字体 / 字号 / 间距 / 圆角 / 阴影 / 缓动 / 层级。
+   base.css、components.css、pages.css 一律只引用这里的 token，禁止魔法数字与内联色值。
+
+   规范来源：C:/Users/demo\Documents\design-specs\FRONTEND_GUIDE.md
+     §2.1 语义双层色板（亮/暗独立映射，非反色）
+     §2.2 排版（≤2 字族 + 1 mono，正文 16px 行高 1.6–1.8）
+     §2.3 间距 4/8pt 网格、圆角 4/8/12/16/pill、阴影仅两档、动效时长与缓动
+
+   明暗切换：html[data-scheme="dark"] 覆盖同名变量（由 app.js 写入，跟随系统 + 手动开关双通道）。
+   ========================================================================== */
+
+/* ---------- 自托管等宽字体（仅数字/编号/时间戳用；正文走系统字体栈） ---------- */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/assets/fonts/jetbrains-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2000-206F, U+2122, U+2191, U+2193, U+2212;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/assets/fonts/jetbrains-mono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2000-206F, U+2122, U+2191, U+2193, U+2212;
+}
+
+:root {
+  /* ---------- 字体族（§2.2：最多 2 族 + 1 mono） ---------- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Inter",
+    "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Roboto Mono", ui-monospace, "Cascadia Mono", monospace;
+
+  /* ---------- 字号（§2.2） ---------- */
+  --text-display: clamp(2rem, 3.4vw, 2.75rem);
+  --text-h1: 1.75rem;      /* 28px 页面标题 */
+  --text-h2: 1.125rem;     /* 18px 分组标题 */
+  --text-h3: 1rem;         /* 16px */
+  --text-body: 1rem;       /* 16px 正文 */
+  --text-small: 0.875rem;  /* 14px 表格/按钮 */
+  --text-caption: 0.75rem; /* 12px 最小字号，低于 12px 禁用 */
+
+  --lh-tight: 1.22;
+  --lh-body: 1.7;
+  --fw-title: 640;
+  --fw-body: 410;
+  --ls-title: -0.02em;
+
+  /* ---------- 间距（§2.3 · 4/8pt 网格） ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+  --space-32: 128px;
+
+  --container: 1200px;
+  --gutter: clamp(16px, 4vw, 40px);
+  --section-block: clamp(24px, 3vw, 40px);
+  --nav-h: 60px;
+
+  /* ---------- 圆角（§2.3 · 同心圆角，卡片禁 >16px） ---------- */
+  --radius-1: 4px;
+  --radius-2: 8px;
+  --radius-3: 12px;
+  --radius-4: 16px;
+  --radius-pill: 999px;
+
+  /* ---------- 控件几何（§4：热区 ≥44px） ---------- */
+  --ctl-h: 44px;
+  --ctl-h-sm: 36px;
+  --row-h: 48px;
+
+  /* ---------- 动效（§5） ---------- */
+  --dur-micro: 0.18s;
+  --dur-base: 0.3s;
+  --dur-slow: 0.5s;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1);
+
+  /* ---------- 层级 ---------- */
+  --z-nav: 100;
+  --z-drawer: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+
+  /* ======================================================================
+     语义色 —— 亮色（默认）。深色是**独立映射**而非反色（§2.1）
+     ====================================================================== */
+  color-scheme: light;
+
+  --color-bg: #fafafa;              /* 页面底（禁纯白） */
+  --color-surface: #ffffff;         /* 卡片 / 表面 */
+  --color-surface-raised: #f4f4f5;  /* 次级面 / 浮层底 */
+  --color-ink: #1a1a1c;             /* 主文字（禁纯黑） */
+  --color-ink-2: rgba(26, 26, 28, 0.70);
+  --color-ink-3: rgba(26, 26, 28, 0.62);   /* 实测：0.42 时 12px 标签只有 3.6:1；0.62 才刚好过 AA 4.5:1 */
+  --color-line: rgba(26, 26, 28, 0.10);
+  --color-line-strong: rgba(26, 26, 28, 0.18);
+  --color-hover: rgba(26, 26, 28, 0.045);
+  --color-accent: #0057d8;          /* 全站唯一强调色，面积 ≤5% */
+  --color-accent-hover: #0046ad;
+  --color-accent-soft: rgba(0, 87, 216, 0.10);
+  --color-on-accent: #ffffff;
+  --color-success: #188038;
+  --color-success-soft: rgba(24, 128, 56, 0.12);
+  --color-warning: #a8590a;
+  --color-warning-soft: rgba(168, 89, 10, 0.12);
+  --color-danger: #c5271c;
+  --color-danger-soft: rgba(197, 39, 28, 0.10);
+  --color-scrim: rgba(18, 18, 20, 0.42);
+  --color-nav-bg: rgba(250, 250, 250, 0.82);
+
+  --elev-1: 0 1px 2px rgba(16, 16, 18, 0.06), 0 1px 3px rgba(16, 16, 18, 0.06);
+  --elev-2: 0 8px 24px rgba(16, 16, 18, 0.12), 0 2px 6px rgba(16, 16, 18, 0.08);
+
+  /* 表格几何 */
+  --table-pad-y: 12px;
+  --table-pad-x: 16px;
+  --drawer-w: 320px;
+}
+
+/* ---------- 语义色 —— 深色（独立映射；强调色提亮保对比度） ---------- */
+html[data-scheme="dark"] {
+  color-scheme: dark;
+
+  --color-bg: #101012;
+  --color-surface: #17171a;
+  --color-surface-raised: #212126;
+  --color-ink: #ececea;
+  --color-ink-2: rgba(236, 236, 234, 0.64);
+  --color-ink-3: rgba(236, 236, 234, 0.58); /* 同上：深色下 0.44 只有 3.87:1 */
+  --color-line: rgba(236, 236, 234, 0.12);
+  --color-line-strong: rgba(236, 236, 234, 0.20);
+  --color-hover: rgba(236, 236, 234, 0.06);
+  --color-accent: #7aa8ff;
+  --color-accent-hover: #a3c2ff;
+  --color-accent-soft: rgba(122, 168, 255, 0.16);
+  --color-on-accent: #0b1220;
+  --color-success: #62d492;
+  --color-success-soft: rgba(98, 212, 146, 0.16);
+  --color-warning: #f0b429;
+  --color-warning-soft: rgba(240, 180, 41, 0.16);
+  --color-danger: #ff7a6b;
+  --color-danger-soft: rgba(255, 122, 107, 0.16);
+  --color-scrim: rgba(0, 0, 0, 0.6);
+  --color-nav-bg: rgba(16, 16, 18, 0.78);
+
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --elev-2: 0 10px 28px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- 兼容别名：旧代码里可能残留的旧 token 名 ---------- */
+:root {
+  --color-paper: var(--color-bg);
+  --color-paper-2: var(--color-surface);
+  --r-1: var(--radius-1);
+  --r-2: var(--radius-2);
+  --r-3: var(--radius-3);
+  --r-pill: var(--radius-pill);
+  --dur-slow-2: var(--dur-slow);
+  --ease-out-expo: var(--ease-standard);
+}

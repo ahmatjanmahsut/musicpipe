@@ -21,8 +21,8 @@ class OfflineIdentityTest {
 
     @Test
     fun cachedIdentityIsUsableWithoutNetwork() {
-        val last = LastSession(14, "demo", "admin")
-        assertEquals("demo", resolveUsable(last)?.username)
+        val last = LastSession(14, "admin", "admin")
+        assertEquals("admin", resolveUsable(last)?.username)
         assertEquals("admin", resolveUsable(last)?.role)
     }
 
@@ -34,7 +34,7 @@ class OfflineIdentityTest {
     @Test
     fun roleFromCacheIsSufficientForLocalGating() {
         // 本地只用来决定"是否显示用户管理入口"；接口权限由服务端二次校验，故缓存角色够用。
-        val last = LastSession(14, "demo", "admin")
+        val last = LastSession(14, "admin", "admin")
         assertEquals(true, resolveUsable(last)?.role == "admin")
     }
 }

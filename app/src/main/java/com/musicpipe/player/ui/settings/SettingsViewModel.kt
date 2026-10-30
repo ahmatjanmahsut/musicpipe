@@ -8,6 +8,7 @@ import com.musicpipe.player.data.remote.NetBench
 import com.musicpipe.player.data.remote.ServerConfig
 import com.musicpipe.player.data.remote.dto.SystemDto
 import com.musicpipe.player.di.AppContainer
+import com.musicpipe.player.ui.theme.AppStyle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +21,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** Router-merged contract: a single gateway URL only. */
     data class Settings(
         val serverUrl: String = "",
-        val themeMode: String = "system"
+        val themeMode: String = "system",
+        /** v1.13.0：界面风格 id，见 AppStyle。 */
+        val appStyle: String = "awwwards"
     )
 
     /** v1.5.0：设置页「网络测试」的完整状态。 */
@@ -36,8 +39,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     val settings: StateFlow<Settings> = combine(
         container.prefs.serverUrl,
-        container.prefs.themeMode
-    ) { url, theme -> Settings(url, theme) }
+        container.prefs.themeMode,
+        container.prefs.appStyle
+    ) { url, theme, style -> Settings(url, theme, style) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Settings())
 
     /** GET /api/v1/system snapshot: counts of library tracks / queued tasks / imported. */
@@ -128,6 +132,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setServerUrl(url: String) { viewModelScope.launch { container.prefs.setServerUrl(url) } }
     fun setThemeMode(mode: String) { viewModelScope.launch { container.prefs.setThemeMode(mode) } }
+
+    /** v1.13.0：切换界面风格。写入 DataStore 后由 MainActivity 的 collect 驱动整棵树重建。 */
+    fun setAppStyle(style: AppStyle) {
+        viewModelScope.launch { container.prefs.setAppStyle(style.id) }
+    }
     fun logout() {
         viewModelScope.launch {
             container.lyricsRepository.clear()

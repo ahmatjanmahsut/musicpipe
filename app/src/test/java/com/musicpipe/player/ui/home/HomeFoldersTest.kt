@@ -151,18 +151,18 @@ class HomeFoldersTest {
      * 这条是本次修复的核心回归测试。
      *
      * 线上真实数据：曲库 101 首全部来自同一个分享歌单，且 album 字段全被写成分享者昵称
-     * （"demo"）。v1.5.0~v1.8.0 把两轴铺在同一个网格里，于是首页出现两张
+     * （"ahmattjon"）。v1.5.0~v1.8.0 把两轴铺在同一个网格里，于是首页出现两张
      * 内容完全相同的卡片。拆轴之后：歌单轴 1 张、专辑轴 1 张，但**两者永不同屏**，
      * 且两轴的 id 集合不相交 —— 保证同一屏不会出现重复入口。
      */
     @Test
     fun axesAreDisjointSoNothingIsShownTwice() {
-        val songs = (1..5).map { song(it.toString(), "demo") }
+        val songs = (1..5).map { song(it.toString(), "ahmattjon") }
         val share = HomeCollection(id = "s1", title = "我喜欢的音乐", songs = songs, missing = 0)
         val playlists = buildFolderGrid(HomeAxis.PLAYLISTS, listOf(share), songs).map { it.id }
         val albums = buildFolderGrid(HomeAxis.ALBUMS, listOf(share), songs).map { it.id }
         assertEquals(listOf("share:s1"), playlists)
-        assertEquals(listOf("album:demo"), albums)
+        assertEquals(listOf("album:ahmattjon"), albums)
         assertTrue("两轴不应共享任何文件夹 id", playlists.intersect(albums.toSet()).isEmpty())
     }
 
@@ -223,4 +223,26 @@ class HomeFoldersTest {
     fun emptyGridWhenNothingToShow() {
         assertTrue(buildFolderGrid(HomeAxis.PLAYLISTS, emptyList(), emptyList()).isEmpty())
     }
+
+    // ---- v1.18.0：艺人分类 ----
+    @Test fun artistsAreGroupedSortedAndCoverEverySong() {
+        val songs = listOf(
+            song("1").copy(artist = "周杰伦"),
+            song("2").copy(artist = "Adele"),
+            song("3").copy(artist = "周杰伦"),
+            song("4").copy(artist = " ")
+        )
+        val grid = buildFolderGrid(HomeAxis.ARTISTS, emptyList(), songs)
+        assertEquals(listOf("Adele", "周杰伦", "未知艺人"), grid.map { it.title })
+        assertEquals(2, grid[1].folder.songs.size)
+        assertEquals(songs.map { it.id }.toSet(), grid.flatMap { it.folder.songs }.map { it.id }.toSet())
+        assertTrue(grid.all { it.kind == HomeFolder.Kind.ARTIST && it.folder.shareId == null })
+    }
+
+    @Test fun artistAxisSurvivesRefreshAndDoesNotDuplicateIds() {
+        val songs = listOf(song("1").copy(artist = "周杰伦"))
+        assertEquals(HomeAxis.ARTISTS, HomeFolders.resolveAxis(HomeAxis.ARTISTS, true, true, true))
+        assertEquals("artist:周杰伦", buildFolderGrid(HomeAxis.ARTISTS, emptyList(), songs).single().id)
+    }
+
 }

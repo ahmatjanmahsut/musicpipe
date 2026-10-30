@@ -4,27 +4,73 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 
 /**
- * v1.10.0：把散落在各页的内联 `RoundedCornerShape(N.dp)` 收敛成常量。
+ * 圆角 token —— 跟随当前风格。
  *
- * 之前 13 处直接写在 Composable 参数里（SongListItem / MiniPlayer / LoginScreen /
- * PlayerScreen / SearchScreen / AdminUsersScreen / TasksScreen / NetSearchScreen），
- * 每帧重组都会新建一个 RoundedCornerShape 实例，本身很轻，但会让该 Composable
- * 永远无法被跳过（参数恒为不等的新对象）。收敛成单例常量后既不新建对象，
- * 也让圆角规格在一处可查（Dso 规范：小图 4dp / 输入框 8dp / 药丸 20~24dp）。
+ * Editorial 是 2dp 硬边（DESIGN.md 禁大圆角），Classic 是 12dp 卡片，
+ * Material 是 16dp，Cupertino 是 12dp，shadcn 是 6px，Brutalist 是 0。
+ * 页面里写 AwwShapes.Square 就能自动拿到当前风格该用的那个值。
+ *
+ * 缓存原因：Compose 用 equals 判断参数是否变化，RoundedCornerShape 是值相等的，
+ * 新建对象不会破坏跳过；但每个滚动帧给 30 张卡片各建一个 Shape 是没必要的分配。
+ * 这里按风格缓存一组，切风格时才重建。
  */
+object AwwShapes {
+
+    private class Bundle(
+        val card: RoundedCornerShape,
+        val input: RoundedCornerShape,
+        val button: RoundedCornerShape,
+        val pill: RoundedCornerShape
+    )
+
+    @Volatile private var cachedStyle: AppStyle? = null
+    @Volatile private var cached: Bundle? = null
+
+    private fun bundle(): Bundle {
+        val style = StyleState.spec.style
+        val c = cached
+        if (c != null && cachedStyle == style) return c
+        val shape = StyleState.spec.shape
+        val b = Bundle(
+            card = RoundedCornerShape(shape.card),
+            input = RoundedCornerShape(shape.input),
+            button = RoundedCornerShape(shape.button),
+            pill = RoundedCornerShape(shape.pill)
+        )
+        cached = b
+        cachedStyle = style
+        return b
+    }
+
+    /** 卡片/封面/输入框底座 —— 页面最常用的那个。 */
+    val Square: RoundedCornerShape get() = bundle().card
+    /** 封面图（和卡片一致，保留独立名字方便以后分化）。 */
+    val Image: RoundedCornerShape get() = bundle().card
+    /** 略大一点的软圆角。 */
+    val Soft: RoundedCornerShape get() = bundle().card
+    /** 输入框。 */
+    val Input: RoundedCornerShape get() = bundle().input
+    /** 按钮。 */
+    val Button: RoundedCornerShape get() = bundle().button
+    /** 药丸（标签/开关）。 */
+    val Pill: RoundedCornerShape get() = bundle().pill
+    /** 强制直角：不受风格影响，用于"必须硬边"的地方（如进度条）。 */
+    val None: RoundedCornerShape = RoundedCornerShape(0.dp)
+
+    /**
+     * 卡片的描边宽度 —— Brutalist 的整套语言都建立在 2dp 粗描边上，
+     * 其它风格是 0（Editorial 只用 1dp 细线做分组，不给卡片描边）。
+     */
+    val borderWidth: androidx.compose.ui.unit.Dp get() = StyleState.spec.shape.border
+}
+
+/** 旧名兼容别名（v1.12.0 前使用，已无页面引用）。 */
 object DsoShapes {
-    /** 列表/网格里的小封面、标签。 */
-    val Small = RoundedCornerShape(4.dp)
-    /** 输入框、小卡片。 */
-    val Input = RoundedCornerShape(8.dp)
-    /** 管理页小标签。 */
-    val Badge = RoundedCornerShape(4.dp)
-    /** 侧边小按钮。 */
-    val SmallSurface = RoundedCornerShape(6.dp)
-    /** 次级按钮 / 卡片。 */
-    val Surface = RoundedCornerShape(10.dp)
-    /** 搜索框、播放页控件。 */
-    val Pill = RoundedCornerShape(20.dp)
-    /** 登录页主按钮（24dp 圆角 = 高 48dp 的一半，呈药丸状）。 */
-    val LoginButton = RoundedCornerShape(24.dp)
+    val Small: RoundedCornerShape get() = AwwShapes.Square
+    val Input: RoundedCornerShape get() = AwwShapes.Input
+    val Badge: RoundedCornerShape get() = AwwShapes.Square
+    val SmallSurface: RoundedCornerShape get() = AwwShapes.Soft
+    val Surface: RoundedCornerShape get() = AwwShapes.Soft
+    val Pill: RoundedCornerShape get() = AwwShapes.Pill
+    val LoginButton: RoundedCornerShape get() = AwwShapes.Button
 }

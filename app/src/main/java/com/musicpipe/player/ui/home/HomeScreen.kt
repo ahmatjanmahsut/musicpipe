@@ -4,6 +4,8 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -29,25 +31,22 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,42 +77,44 @@ import com.musicpipe.player.di.LocalAppContainer
 import com.musicpipe.player.ui.components.EmptyBlock
 import com.musicpipe.player.ui.components.ErrorBanner
 import com.musicpipe.player.ui.components.LoadingBlock
+import com.musicpipe.player.ui.components.SyncingBlock
 import com.musicpipe.player.ui.components.SongListItem
+import com.musicpipe.player.ui.design.AwwEmpty
+import com.musicpipe.player.ui.design.AwwLabel
+import com.musicpipe.player.ui.design.AwwMono
+import com.musicpipe.player.ui.design.AwwRule
+import com.musicpipe.player.ui.design.ClipReveal
+import com.musicpipe.player.ui.design.MaskReveal
+import com.musicpipe.player.ui.design.PressScale
+import com.musicpipe.player.ui.theme.AwwColors
+import com.musicpipe.player.ui.theme.AwwMotion
+import com.musicpipe.player.ui.theme.AwwShapes
+import com.musicpipe.player.ui.theme.AwwSpace
+import com.musicpipe.player.ui.theme.AwwTheme
 import com.musicpipe.player.ui.theme.DsoColors
-import com.musicpipe.player.ui.theme.DsoShapes
-import com.musicpipe.player.ui.theme.DsoTextStyles
+import com.musicpipe.player.ui.theme.LocalReduceMotion
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 /**
- * Home (v1.5.0) — 文件夹式布局。
+ * Home (v1.12.0) — 编辑杂志式布局。
  *
- * 与 v1.4.0 的分栏列表相比有三点变化：
+ * 这一版是按 DESIGN.md（Awwwards Style）重做的视觉层，**数据与交互逻辑与 v1.10.0 完全一致**：
+ * 网格 / 文件夹详情 / 双轴切换 / 歌单管理 / 合并 / 删除的判定与调用都保持原样，
+ * 只换了"怎么长"。逐条对应规范：
  *
- *  1. **文件夹网格**（本文件 [FolderGrid]）：首页是一屏 2 列的文件夹卡片，每个卡片是一个
- *     分享歌单或一张专辑，带 2x2 封面拼图。点进去看曲目（[FolderDetail]）。
- *  2. **掉帧修复**：v1.4.0 把最多 500 条 [SongListItem] 塞进同一个 LazyColumn —— 滚动时
- *     每帧都要测量/排版大量含 AsyncImage 的行，正是"上下滑动动画掉帧"的根源。现在顶层只
- *     组合**可见的文件夹卡片**（通常 6-12 个），500 首歌只在进入某个文件夹后才逐行渲染，
- *     滚动负载从 O(500) 降到 O(可见卡片数)。
- *  3. **封面请求量下降**：卡片只取前 4 张封面做拼图（[HomeFolders.coverUrls]），而不是
- *     每行一张；叠加 Coil 与 API 共用连接池（见 MusicPipeApplication），首屏图片请求
- *     从「几十次独立握手」变成「同一连接上连续取几张」。
+ *  · 报头（[LibraryMasthead]）：小标签 + 流式大标题 + 等宽元信息 + 细线。规范 §4 要求
+ *    大标题用 clamp 流式字号（这里走 AwwType.display，已按屏宽换算），左右不对称（右侧只放
+ *    等宽计数，不居中）。
+ *  · 轴切换（[AxisTabs]）：从"红色胶囊按钮"改成"大写小标签 + 编号 + 选中项下方 1dp 强调线"。
+ *    强调色只出现在线和小标签上（面积远低于 §3 的 5% 上限），不再有整块红底。
+ *  · 卡片（[FolderCard]）：16:10（§7 列表图比例）、2dp 圆角（§4 禁大圆角）、无阴影、
+ *    无红底角标；类型与序号改成图片下方的等宽元信息行。封面入场走 [ClipReveal]（§5 动效②）。
+ *  · 分隔只用 [AwwRule] 细线，不用卡片套卡片（§10 负面清单）。
+ *  · 管理态：选中用 1dp 强调色描边 + 右上强调方块，不再用 2dp 粗边 + 圆形勾选。
  *
- * v1.6.0（"滑动还是不顺"之后查到的真正两处原因，均已修）：
- *
- *  A. **组合期在做重活**。旧版 UiState.folders 是个 `get()` 属性，每次读取都重跑
- *     HomeFolders.build()（分组 68 首歌 + 排序 + 拼副标题 + 抽封面 URL + 分配新 List）。
- *     LazyGrid 每个滚动帧都会读它 → 每个滚动帧都重算一遍整个表格。现在表格在
- *     HomeViewModel.refresh() 里算一次并缓存在 state 上，滚动期零计算。
- *  B. **封面按原图解码**。旧版裸 AsyncImage 没有尺寸约束，Coil 以原图分辨率解码
- *     (服务端封面上千像素)，一屏 6 张拼图 ≈ 数十 MB 位图，快速滑动时反复分配/回收
- *     触发 GC —— 表现为"一滑就卡一下"。现在统一走 [FadeInCover]，显式 size +
- *     关闭 crossfade（crossfade 会给每张新出现的封面开一段动画，快速滑动时动画
- *     互相堆叠，本身也是掉帧来源）。
- *
- * 参考的同类实现思路（DsoMusic / Apple Music / Spotify 的通用做法）：
- * 列表项只吃不可变小对象、封面按显示尺寸降采样解码、滚动期不做任何数据加工。
+ * 性能约束（v1.6.0 的两处掉帧根因）在这里被保留且注释保留：`folders` 表格在 ViewModel 里
+ * 算一次并缓存、卡片只吃不可变值对象、封面显式指定解码尺寸、所有 lambda 用 remember 固定。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -135,84 +137,71 @@ fun HomeScreen(
     }.collectAsStateWithLifecycle(initialValue = null)
     val context = LocalContext.current
     var confirmDelete by remember { mutableStateOf(false) }
-    // v1.6.0 歌单管理：confirmPlaylistDelete = 待删除的 shareId；mergeTarget = 打开合并对话框时选中的目标
     var confirmPlaylistDelete by remember { mutableStateOf<String?>(null) }
     var confirmBulkDeletePlaylists by remember { mutableStateOf(false) }
     var showMerge by remember { mutableStateOf(false) }
 
-    // Refresh whenever home becomes visible again (returning from 下载任务 / 分享导入 /
-    // 网络搜索, or app foregrounded); the VM loading guard dedupes in-flight loads.
+    // v1.15.0：回前台只做 silent 刷新。原实现直接 refresh()，会把 loading 置 true，
+    // 首页顶部的下拉刷新圈因此在每次切回 App 时都转一圈 —— 用户看到的就是"一直在转"。
     LifecycleResumeEffect(Unit) {
-        vm.refresh()
+        vm.refresh(showIndicator = false)
         onPauseOrDispose { }
     }
 
-    // v1.6.0 稳定性：`{ id -> vm.openFolder(id) }` 写在 FolderGrid 的实参位置时，每次重组都会
-    // 新建一个捕获 vm 的 lambda。strong skipping 下 lambda 参数按 === 比较，新旧永不相等，
-    // 于是每次 state 变化（例如管理态切换、loading 置位）都会把整个网格连同全部可见卡片重组一遍。
-    // 这里 remember(vm) 固定成同一个实例，网格才能正常跳过。
+    // v1.6.0 稳定性：lambda 实参位置直接写 `{ id -> vm.openFolder(id) }` 时每次重组都新建实例，
+    // strong skipping 下按 === 比较永不相等 → 任何 state 变化都会重组整个网格。remember 固定。
     val onOpenFolder: (String) -> Unit = remember(vm) { { id -> vm.openFolder(id) } }
-    // 同上：切轴 lambda 也 remember，避免每次重组新建导致分段控件无法跳过。
     val onSelectAxis: (HomeAxis) -> Unit = remember(vm) { { axis -> vm.setAxis(axis) } }
+    val onToggleManage: () -> Unit = remember(vm) { { vm.togglePlaylistManage() } }
+    val onToggleSelectPlaylist: (String) -> Unit = remember(vm) { { id -> vm.togglePlaylistSelect(id) } }
 
-    // 文件夹二级页面：系统返回键先回到网格，而不是退出 App
     val openFolder = state.openFolder
     BackHandler(enabled = openFolder != null) { vm.closeFolder() }
+    BackHandler(enabled = state.playlistManageMode && openFolder == null) {
+        vm.togglePlaylistManage()
+    }
 
-    // v1.6.0 稳定性细节：UiState.shareFolders 是 getter，每次读取都 map+filter 出一个**新的 List**。
-    // 它在下面被读了三次（操作条 / 合并对话框 / 顶部栏可见性），等于每次重组都新建 3 个 List，
-    // 并且任何以它为参数的子组合都无法跳过。这里按 folders 缓存一次，folders 是值类型且
-    // 只在 refresh 成功后变化，所以缓存键的相等比较代价极低。
-    // v1.10.0（P7）：不再需要 remember 包一层 —— UiState.shareFolders 现在是 lazy，
-    // 同一份 state 永远返回同一个 List 引用，直接读即可（原来 remember 的 key 用的是
-    // state.folders，而取值的字段来自 playlistFolders，键值不一致，切轴时不会重建）。
+    // UiState.shareFolders 自 v1.10.0 起是 lazy（同引用），直接读即可。
     val shareFolders = state.shareFolders
 
     if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("删除歌曲") },
-            text = {
-                Text("删除所选 " + state.selected.size + " 首歌曲？\n将同时删除路由器网盘上的音频文件、歌词与封面，操作不可恢复。")
+        AwwDialog(
+            title = "删除歌曲",
+            body = "删除所选 " + state.selected.size +
+                " 首歌曲？将同时删除路由器网盘上的音频文件、歌词与封面，操作不可恢复。",
+            confirmText = "删除",
+            onConfirm = {
+                confirmDelete = false
+                vm.deleteSelected { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    vm.deleteSelected { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
-                }) { Text("删除", color = DsoColors.AppRed) }
-            },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } }
+            onDismiss = { confirmDelete = false }
         )
     }
 
-    // 删除单个歌单（也用于批量确认后的单条路径）
     val delOne = confirmPlaylistDelete
     if (delOne != null) {
-        AlertDialog(
-            onDismissRequest = { confirmPlaylistDelete = null },
-            title = { Text("删除歌单") },
-            text = { Text("只删除这个歌单入口，曲库里已下载的歌曲不会被删除。\n如需连歌曲一起删，请进入歌单后使用「管理」。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmPlaylistDelete = null
-                    vm.deletePlaylist(delOne) { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
-                }) { Text("删除", color = DsoColors.AppRed) }
+        AwwDialog(
+            title = "删除歌单",
+            body = "只删除这个歌单入口，曲库里已下载的歌曲不会被删除。" +
+                "如需连歌曲一起删，请进入歌单后使用「管理」。",
+            confirmText = "删除",
+            onConfirm = {
+                confirmPlaylistDelete = null
+                vm.deletePlaylist(delOne) { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
             },
-            dismissButton = { TextButton(onClick = { confirmPlaylistDelete = null }) { Text("取消") } }
+            onDismiss = { confirmPlaylistDelete = null }
         )
     }
     if (confirmBulkDeletePlaylists) {
-        AlertDialog(
-            onDismissRequest = { confirmBulkDeletePlaylists = false },
-            title = { Text("删除歌单") },
-            text = { Text("删除选中的 " + state.selectedPlaylists.size + " 个歌单？曲库里已下载的歌曲不会被删除。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmBulkDeletePlaylists = false
-                    vm.deleteSelectedPlaylists { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
-                }) { Text("删除", color = DsoColors.AppRed) }
+        AwwDialog(
+            title = "删除歌单",
+            body = "删除选中的 " + state.selectedPlaylists.size + " 个歌单？曲库里已下载的歌曲不会被删除。",
+            confirmText = "删除",
+            onConfirm = {
+                confirmBulkDeletePlaylists = false
+                vm.deleteSelectedPlaylists { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
             },
-            dismissButton = { TextButton(onClick = { confirmBulkDeletePlaylists = false }) { Text("取消") } }
+            onDismiss = { confirmBulkDeletePlaylists = false }
         )
     }
     if (showMerge) {
@@ -232,41 +221,43 @@ fun HomeScreen(
 
     val hasContent = state.songs.isNotEmpty() || state.collections.isNotEmpty()
 
-    // 管理态下按系统返回键先退出管理，而不是直接退出应用/返回上一个 tab。
-    BackHandler(enabled = state.playlistManageMode && openFolder == null) {
-        vm.togglePlaylistManage()
-    }
-
+    val screenWidth = LocalConfiguration.current.screenWidthDp
+    val screenHeight = LocalConfiguration.current.screenHeightDp
+    val wideCar = com.musicpipe.player.ui.theme.ResponsiveLayout.isWideCar(screenWidth, screenHeight)
     Column(Modifier.fillMaxSize()) {
-        TopBar(
-            title = openFolder?.title ?: "音乐库",
-            folderMode = openFolder != null,
-            songCount = openFolder?.songs?.size,
-            canManage = if (openFolder != null) {
-                openFolder.songs.isNotEmpty()
-            } else {
-                // 网格态：长按卡片也能进入，这里是显式入口（更易发现）。
-                // v1.9.0：专辑轴没有可管理的实体（专辑是曲库投影），管理入口只在歌单轴出现。
-                shareFolders.isNotEmpty() && state.axis == HomeAxis.PLAYLISTS
-            },
-            manageMode = if (openFolder != null) state.manageMode else state.playlistManageMode,
-            onBack = { vm.closeFolder() },
-            onOpenSearch = onOpenSearch,
-            onOpenNetSearch = onOpenNetSearch,
-            onOpenTasks = onOpenTasks,
-            onOpenShare = onOpenShare,
-            onToggleManage = {
-                if (openFolder != null) vm.toggleManage() else vm.togglePlaylistManage()
-            }
-        )
+        if (openFolder != null) {
+            FolderTopBar(
+                title = openFolder.title,
+                songCount = openFolder.songs.size,
+                manageMode = state.manageMode,
+                canManage = openFolder.songs.isNotEmpty(),
+                onBack = { vm.closeFolder() },
+                onToggleManage = { vm.toggleManage() }
+            )
+        } else {
+            LibraryMasthead(
+                songCount = state.songs.size,
+                playlistCount = state.playlistFolders.size,
+                albumCount = state.albumFolders.size,
+                artistCount = state.artistFolders.size,
+                manageMode = state.playlistManageMode,
+                canManage = shareFolders.isNotEmpty() && state.axis == HomeAxis.PLAYLISTS,
+                onOpenSearch = onOpenSearch,
+                onOpenNetSearch = onOpenNetSearch,
+                onOpenTasks = onOpenTasks,
+                onOpenShare = onOpenShare,
+                onToggleManage = onToggleManage,
+                axis = state.axis,
+                onSelectAxis = onSelectAxis
+            )
+        }
 
-        // v1.9.0：歌单 / 专辑两个轴分段切换。同一屏只展示一个轴，
-        // 从根上消除"同一个歌单与它的专辑各占一张卡片"的重复感。
-        if (openFolder == null && (state.playlistFolders.isNotEmpty() || state.albumFolders.isNotEmpty())) {
+        if (openFolder == null && !wideCar) {
             AxisTabs(
                 axis = state.axis,
                 playlistCount = state.playlistFolders.size,
                 albumCount = state.albumFolders.size,
+                artistCount = state.artistFolders.size,
                 onSelect = onSelectAxis
             )
         }
@@ -276,48 +267,77 @@ fun HomeScreen(
             onRefresh = vm::refresh,
             modifier = Modifier.weight(1f)
         ) {
-            when {
-                state.loading && !hasContent -> LoadingBlock(Modifier.fillMaxSize())
-                !hasContent -> Column(Modifier.fillMaxSize()) {
+            // v1.15.0：判断全部收敛进 HomeLoadingGate（纯函数、有单测）。
+            // 关键修复：本地快照读过之后就不再显示循环计数器，改用静止的同步态 ——
+            // 旧实现在等网络期间一直转 000->099，就是用户说的"圈一直转"。
+            when (HomeLoadingGate.resolve(
+                loading = state.loading,
+                hasContent = hasContent,
+                bootstrapped = state.bootstrapped,
+                hasOpenFolder = openFolder != null
+            )) {
+                HomeContentState.BOOTSTRAPPING -> LoadingBlock(Modifier.fillMaxSize())
+                HomeContentState.SYNCING_EMPTY -> SyncingBlock(modifier = Modifier.fillMaxSize())
+                HomeContentState.EMPTY -> Column(Modifier.fillMaxSize()) {
                     if (state.error != null) {
                         ErrorBanner("加载失败：" + state.error + "，下拉重试")
                     }
-                    EmptyBlock(
-                        if (state.error == null) "曲库为空：先在「网络搜索」或「分享导入」添加歌曲，或下拉重试"
-                        else "未能加载曲库，下拉重试"
+                    AwwEmpty(
+                        index = "000",
+                        title = if (state.error == null) "曲库为空" else "未能加载曲库",
+                        hint = if (state.error == null) {
+                            "先去「网络搜索」或「导入」添加歌曲，或下拉重试。"
+                        } else {
+                            "检查网络与服务器地址后下拉重试。"
+                        }
                     )
                 }
-                openFolder != null -> {
-                    // 同 onOpenFolder：详情页的两个 lambda 也 remember 住，否则列表每滚动一次
-                    // 都要重组全部可见歌曲行
-                    val folderId = openFolder.id
-                    val onPlay = remember(vm, folderId) { { index: Int -> vm.playFolder(folderId, index) } }
-                    val onPlayAll = remember(vm, folderId) { { vm.playFolder(folderId, 0) } }
-                    FolderDetail(
-                        folder = openFolder,
-                        currentSongId = currentSongId,
-                        manageMode = state.manageMode,
-                        selected = state.selected,
-                        error = state.error,
-                        onPlay = onPlay,
-                        onToggleSelect = vm::toggleSelect,
-                        onPlayAll = onPlayAll
-                    )
-                }
-                else -> FolderGrid(
-                    folders = state.folders,
-                    emptyText = if (state.axis == HomeAxis.PLAYLISTS) {
-                        "还没有歌单：去「分享导入」粘贴一个网易云/QQ音乐歌单链接"
+                HomeContentState.CONTENT -> {
+                    val folder = openFolder
+                    if (folder != null) {
+                        val folderId = folder.id
+                        val onPlay = remember(vm, folderId) { { index: Int -> vm.playFolder(folderId, index) } }
+                        val onPlayAll = remember(vm, folderId) { { vm.playFolder(folderId, 0) } }
+                        FolderDetail(
+                            folder = folder,
+                            currentSongId = currentSongId,
+                            manageMode = state.manageMode,
+                            selected = state.selected,
+                            error = state.error,
+                            onPlay = onPlay,
+                            onToggleSelect = vm::toggleSelect,
+                            onPlayAll = onPlayAll
+                        )
                     } else {
-                        "曲库里还没有专辑信息：去「网络搜索」下载歌曲后会按专辑归类"
-                    },
-                    error = state.error,
-                    manageMode = state.playlistManageMode,
-                    selected = state.selectedPlaylists,
-                    onOpenFolder = onOpenFolder,
-                    onToggleSelect = vm::togglePlaylistSelect,
-                    onLongPressStartManage = vm::togglePlaylistManage
-                )
+                        Crossfade(
+                            targetState = state.axis,
+                            animationSpec = tween(if (LocalReduceMotion.current) 0 else 240),
+                            label = "libraryAxis"
+                        ) { axis ->
+                        FolderGrid(
+                            folders = when (axis) {
+                                HomeAxis.PLAYLISTS -> state.playlistFolders
+                                HomeAxis.ALBUMS -> state.albumFolders
+                                HomeAxis.ARTISTS -> state.artistFolders
+                            },
+                            emptyTitle = if (state.axis == HomeAxis.PLAYLISTS) "还没有歌单" else "还没有专辑",
+                            emptyHint = if (state.axis == HomeAxis.PLAYLISTS) {
+                                "去「导入」粘贴一个网易云 / QQ 音乐歌单链接。"
+                            } else if (state.axis == HomeAxis.ALBUMS) {
+                                "下载歌曲后会按专辑自动归类。"
+                            } else {
+                                "下载歌曲后会按艺人自动归类。"
+                            },
+                            error = state.error,
+                            manageMode = state.playlistManageMode,
+                            selected = state.selectedPlaylists,
+                            onOpenFolder = onOpenFolder,
+                            onToggleSelect = onToggleSelectPlaylist,
+                            onLongPressStartManage = onToggleManage
+                        )
+                        }
+                    }
+                }
             }
         }
 
@@ -341,157 +361,219 @@ fun HomeScreen(
         }
     }
 }
-
-/** 顶栏：网格态显示「音乐库」+ 三个入口；文件夹态显示 ‹ + 文件夹名 + 歌曲数。 */
+/**
+ * 库报头（§4 Hero 非对称）：左侧小标签 + 大标题 + 等宽元信息，右侧留白，底部细线。
+ *
+ * 不做「居中标题 + 副标题 + 两个按钮」的套路（负面清单明确禁止）；入口用大写小标签排成一行，
+ * 视觉上像杂志的目录栏而不是工具栏。
+ */
 @Composable
-private fun TopBar(
-    title: String,
-    folderMode: Boolean,
-    songCount: Int?,
-    canManage: Boolean,
+private fun LibraryMasthead(
+    songCount: Int,
+    playlistCount: Int,
+    albumCount: Int,
+    artistCount: Int,
     manageMode: Boolean,
-    onBack: () -> Unit,
+    canManage: Boolean,
     onOpenSearch: () -> Unit,
     onOpenNetSearch: () -> Unit,
     onOpenTasks: () -> Unit,
     onOpenShare: () -> Unit,
-    onToggleManage: () -> Unit
+    onToggleManage: () -> Unit,
+    axis: HomeAxis,
+    onSelectAxis: (HomeAxis) -> Unit
 ) {
-    Row(
-        Modifier.fillMaxWidth().padding(start = if (folderMode) 0.dp else 16.dp, end = 4.dp, top = 6.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (folderMode) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回",
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
+    val config = LocalConfiguration.current
+    val wideCar = com.musicpipe.player.ui.theme.ResponsiveLayout.isWideCar(config.screenWidthDp, config.screenHeightDp)
+    Column(Modifier.fillMaxWidth().padding(start = AwwSpace.s4, end = AwwSpace.s4, top = AwwSpace.s2)) {
+        if (wideCar) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).clip(AwwShapes.Input).background(MaterialTheme.colorScheme.surfaceVariant).clickable(onClick = onOpenSearch).padding(horizontal = AwwSpace.s4),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Search, "搜索歌曲", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(AwwSpace.s3))
+                    Text("搜索歌曲、歌手、专辑", style = AwwTheme.type.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Spacer(Modifier.width(AwwSpace.s4))
+                AxisTabs(axis, playlistCount, albumCount, artistCount, onSelect = onSelectAxis)
             }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                HomeAction("曲库搜索", Icons.Filled.Search, onOpenSearch)
+                HomeAction("网络搜歌", Icons.Filled.CloudDownload, onOpenNetSearch)
+                HomeAction("下载任务", Icons.Filled.Download, onOpenTasks)
+                HomeAction("歌单导入", Icons.Filled.LibraryMusic, onOpenShare)
+                Spacer(Modifier.weight(1f))
+                Text(songCount.toString() + " 首", style = AwwTheme.type.bodySmall, color = AwwColors.Ink2)
+                if (canManage) IconButton(onClick = onToggleManage) { Icon(Icons.Filled.MoreHoriz, "管理歌单", tint = AwwColors.Ink2) }
+            }
+            return
         }
-        Column(Modifier.weight(1f)) {
-            Text(
-                title, style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
-            )
-            if (folderMode && songCount != null) {
-                Text(
-                    songCount.toString() + " 首",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        if (!folderMode) {
-            IconButton(onClick = onOpenNetSearch) {
-                Icon(
-                    Icons.Filled.Public, contentDescription = "网络搜索",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = onOpenTasks) {
-                Icon(
-                    Icons.Filled.Download, contentDescription = "下载任务",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = onOpenShare) {
-                Icon(
-                    Icons.Filled.Share, contentDescription = "分享导入",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        Text(
-            "搜索",
-            color = DsoColors.AppRed,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(AwwShapes.Input)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .clickable(onClick = onOpenSearch)
-                .padding(horizontal = 6.dp, vertical = 4.dp)
-        )
-        if (canManage) {
+                .padding(horizontal = AwwSpace.s4),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Search, "搜索歌曲", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(AwwSpace.s3))
             Text(
-                if (manageMode) "完成" else "管理",
-                color = DsoColors.AppRed,
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier
-                    .clickable(onClick = onToggleManage)
-                    .padding(start = 6.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)
+                "搜索歌曲、歌手、专辑",
+                style = AwwTheme.type.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = AwwSpace.s3)
             )
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = AwwSpace.s4),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            HomeAction("曲库搜索", Icons.Filled.Search, onOpenSearch)
+            HomeAction("网络搜歌", Icons.Filled.CloudDownload, onOpenNetSearch)
+            HomeAction("下载任务", Icons.Filled.Download, onOpenTasks)
+            HomeAction("歌单导入", Icons.Filled.LibraryMusic, onOpenShare)
+        }
+        Row(Modifier.fillMaxWidth().padding(top = AwwSpace.s4), verticalAlignment = Alignment.CenterVertically) {
+            Text("我的音乐", style = AwwTheme.type.h3, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.weight(1f))
+            Text(songCount.toString() + " 首", style = AwwTheme.type.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (canManage) {
+                IconButton(onClick = onToggleManage) {
+                    Icon(Icons.Filled.MoreHoriz, if (manageMode) "完成管理" else "管理歌单", tint = if (manageMode) AwwColors.Accent else AwwColors.Ink2)
+                }
+            }
         }
     }
 }
 
+@Composable
+private fun HomeAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        PressScale {
+            Box(
+                Modifier.size(48.dp).clip(AwwShapes.Image).background(AwwColors.AccentSoft).clickable(onClick = onClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, label, tint = AwwColors.Accent, modifier = Modifier.size(24.dp))
+            }
+        }
+        Text(label, style = AwwTheme.type.small, color = AwwColors.Ink2, modifier = Modifier.padding(top = AwwSpace.s2))
+    }
+}
+
+/** 报头里的一个文字入口：大写小标签 + 按下反馈（§5 动效⑤）。 */
+@Composable
+private fun MastheadAction(text: String, onClick: () -> Unit, accent: Boolean = false) {
+    val color = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    PressScale {
+        Box(
+            Modifier
+                .clickable(onClick = onClick)
+                .padding(vertical = AwwSpace.s2)
+        ) {
+            AwwLabel(text, color = color)
+        }
+    }
+}
+/** 文件夹详情页顶栏：‹ + 标题 + 等宽计数 + 管理入口。 */
+@Composable
+private fun FolderTopBar(
+    title: String,
+    songCount: Int,
+    manageMode: Boolean,
+    canManage: Boolean,
+    onBack: () -> Unit,
+    onToggleManage: () -> Unit
+) {
+    val gutter = AwwSpace.gutter(LocalConfiguration.current.screenWidthDp)
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = AwwSpace.s1, end = gutter, top = AwwSpace.s2),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = AwwTheme.type.h3,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                AwwMono(pad3(songCount) + " 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (canManage) {
+                MastheadAction(if (manageMode) "完成" else "管理", onToggleManage, accent = true)
+            }
+        }
+        AwwRule()
+    }
+}
+
 /**
- * v1.9.0 轴切换分段控件：歌单 / 专辑。
+ * 轴切换（歌单 / 专辑）。
  *
- * 用自绘胶囊而不是 Material3 SegmentedButton，原因有二：
- *  1) 本项目其余筛选控件（管理态胶囊、歌词按钮）都是同一种胶囊样式，保持视觉一致；
- *  2) SegmentedButton 在小屏上左对齐留白较大，两个中文标签的宽度差异会让整个控件跳动。
- *
- * 形状/颜色都 remember 住：分段控件在每次 state 变化时都会重组（它读 axis 与两个计数），
- * 组合期新建 shape/color 会让它永远无法跳过。
+ * v1.12.0：从「红色胶囊按钮」改为「等宽编号 + 大写标签 + 选中项下方 1dp 强调线」。
+ * 理由：§3 要求强调色面积 <= 5%，整块红底胶囊一次就吃掉大半预算；下划线既保留「当前在哪」
+ * 的强提示，又把强调色面积压到一条 1dp 线。计数为 0 的轴仍然显示（用户要知道它存在）但置灰。
  */
 @Composable
 private fun AxisTabs(
     axis: HomeAxis,
     playlistCount: Int,
     albumCount: Int,
+    artistCount: Int,
     onSelect: (HomeAxis) -> Unit
 ) {
-    val pillShape = CircleShape
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        Modifier.fillMaxWidth().padding(horizontal = AwwSpace.s4),
+        horizontalArrangement = Arrangement.spacedBy(AwwSpace.s6)
     ) {
         HomeAxis.entries.forEach { item ->
             val selected = item == axis
-            val count = if (item == HomeAxis.PLAYLISTS) playlistCount else albumCount
-            // 0 个的轴仍然显示（用户要知道它存在），但置灰提示当前没有内容
-            val enabled = count > 0 || selected
-            Box(
-                Modifier
-                    .clip(pillShape)
-                    .background(
-                        when {
-                            selected -> DsoColors.AppRed
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    )
-                    .clickable(enabled = enabled && !selected) { onSelect(item) }
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
-            ) {
+            Column(Modifier.clickable { onSelect(item) }.padding(vertical = AwwSpace.s2)) {
                 Text(
-                    text = item.label + " " + count,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = when {
-                        selected -> Color.White
-                        enabled -> MaterialTheme.colorScheme.onSurfaceVariant
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                    }
+                    item.label + " · " + when (item) {
+                        HomeAxis.PLAYLISTS -> playlistCount
+                        HomeAxis.ALBUMS -> albumCount
+                        HomeAxis.ARTISTS -> artistCount
+                    },
+                    style = if (selected) AwwTheme.type.body else AwwTheme.type.bodySmall,
+                    color = if (selected) AwwColors.Ink else AwwColors.Ink3
+                )
+                Spacer(Modifier.height(AwwSpace.s1))
+                Box(
+                    Modifier.width(24.dp).height(3.dp).clip(AwwShapes.Pill)
+                        .background(if (selected) AwwColors.Accent else Color.Transparent)
                 )
             }
         }
     }
 }
-
 /**
- * 文件夹网格总览。
+ * 文件夹网格。
  *
- * 用 [LazyVerticalGrid] 而不是"外面一个 LazyColumn + 内部若干 LazyRow"：后者会把每个
- * 文件夹的整行一次性组合（即使它在屏幕外），这正是 v1.4.0 首页卡顿的另一半原因。
- * 网格只为可见卡片分配组合，且卡片本身是不可见的惰性项。
+ * 用 LazyVerticalGrid 而不是「外面一个 LazyColumn + 内部若干 LazyRow」：后者会把每个文件夹的
+ * 整行一次性组合（即使它在屏幕外），这正是 v1.4.0 首页卡顿的另一半原因。
+ *
+ * v1.12.0：卡片比例从 1:1 改 16:10（§7 列表图建议比例），间距走 8pt 网格；
+ * 每个条目的 key / contentType 保持 v1.6.0 的声明（错误横幅、空态、卡片各走各的复用池）。
  */
 @Composable
 private fun FolderGrid(
     folders: List<HomeFolderGrid>,
-    emptyText: String,
+    emptyTitle: String,
+    emptyHint: String,
     error: String?,
     manageMode: Boolean,
     selected: Set<String>,
@@ -499,21 +581,23 @@ private fun FolderGrid(
     onToggleSelect: (String) -> Unit,
     onLongPressStartManage: () -> Unit
 ) {
-    // v1.6.0：滚动性能相关配置都集中在这里，理由见文件头注释。
-    //
-    //  · 每一格都是固定 key（folders 自带稳定 id），滚动时不会重建已经滑出屏幕的卡片状态；
-    //  · 网格只有 2 列，一屏通常 4~6 张卡，本来就把测量量压到了 O(可见卡片数)，
-    //    因此这里不需要额外的 prefetch/固定高度技巧 —— 真正的瓶颈在封面解码与组合期计算，
-    //    两处都已修（见文件头 A/B 与 FadeInCover 的说明）。
+    val gutter = AwwSpace.gutter(LocalConfiguration.current.screenWidthDp)
+    // 序号来自网格顺序（等宽编号要稳定，不能依赖可见项位置）。只在 folders 变化时重算一次。
+    val indexById = remember(folders) {
+        val map = HashMap<String, Int>(folders.size)
+        folders.forEachIndexed { i, f -> map[f.id] = i }
+        map
+    }
     LazyVerticalGrid(
-        // v1.10.0（V7）：原来是全项目唯一一处写死的 GridCells.Fixed(2)。
-        // 手机竖屏下 Adaptive(150.dp) 仍恰好排 2 列（与原来一致），
-        // 但横屏、折叠屏展开、平板会自动变成 3~4 列，不必再单独写一套布局。
-        // 跨列条目改用 maxLineSpan（见下），否则新列数下横幅只会占 2 格、右边露白。
         columns = GridCells.Adaptive(minSize = 150.dp),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(
+            start = gutter,
+            end = gutter,
+            top = AwwSpace.s4,
+            bottom = AwwSpace.s24
+        ),
+        horizontalArrangement = Arrangement.spacedBy(AwwSpace.s4),
+        verticalArrangement = Arrangement.spacedBy(AwwSpace.s8),
         modifier = Modifier.fillMaxSize()
     ) {
         if (error != null) {
@@ -523,31 +607,24 @@ private fun FolderGrid(
         }
         if (folders.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "empty", contentType = "empty") {
-                Text(
-                    emptyText,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
+                AwwEmpty(index = "000", title = emptyTitle, hint = emptyHint)
             }
         }
-        // v1.6.0 payload 类型：网格里同时存在三种量级差别很大的条目（错误横幅/空态提示/文件夹卡片）。
-        // 不声明 contentType 时，LazyGrid 会把它们当作同一种可复用槽位，一旦列表在
-        // "有错误→无错误"或"空→非空"之间切换，就会让一个 Text 的组合槽被拿去组合 FolderCard，
-        // 触发昂贵的重新组合；声明类型后每种条目各走各的复用池，滚动与状态切换都更稳。
+        // v1.6.0 payload 类型：网格里同时存在三种量级差别很大的条目（错误横幅/空态/文件夹卡片）。
+        // 不声明 contentType 时 LazyGrid 会把它们当作同一种可复用槽位，状态切换时触发昂贵的重组。
         items(folders, key = { it.id }, contentType = { "folder" }) { item ->
             FolderCard(
                 item = item,
+                index = indexById[item.id] ?: 0,
                 manageMode = manageMode,
-                // v1.7.0 修复：selected 集合装的是 shareId（= sharelinks.id，如 "mv6kz..."），
-                // 而 item.id 是网格内部带前缀的 folderId（"share:mv6kz..."）。用 item.id 判断
-                // 永远为 false —— 点击其实已经写进集合，但卡片看不出任何变化，用户感受就是
-                // "管理态下点不动"。判定收到 PlaylistManageRules.isSelected 一处，便于单测。
+                // v1.7.0 修复：selected 集合装的是 shareId（sharelinks.id），而 item.id 是带前缀的
+                // folderId（"share:mv6kz..."）。用 item.id 判断恒为 false —— 点击其实已写入集合，
+                // 但卡片看不出变化，表现就是「管理态点不动」。判定收敛到 PlaylistManageRules 一处。
                 selected = PlaylistManageRules.isSelected(item.folder, selected),
                 onClick = {
                     val shareId = item.folder.shareId
                     if (manageMode) {
-                        // 专辑/未分类是曲库的投影，没有"歌单"可删，管理态下点击无效果
+                        // 专辑/未分类是曲库投影，没有「歌单」可删，管理态下点击无效果
                         if (shareId != null) onToggleSelect(shareId)
                     } else {
                         onOpenFolder(item.id)
@@ -555,9 +632,8 @@ private fun FolderGrid(
                 },
                 onLongClick = {
                     val shareId = item.folder.shareId
-                    // 长按进入歌单管理：比先找"管理"按钮再点更接近微信/网易云的删除歌单习惯。
-                    // v1.7.0：已经在管理态时，长按与点击同样切换选中 —— 之前这里直接
-                    // 什么都不做，用户长按没有反馈，会以为卡片"点不动"。
+                    // 长按进入歌单管理，比先找「管理」按钮再点更接近常见习惯。
+                    // v1.7.0：管理态下长按与点击同样切换选中（之前长按什么都不做，用户以为卡片坏了）。
                     if (shareId != null) {
                         if (manageMode) onToggleSelect(shareId) else onLongPressStartManage()
                     }
@@ -568,20 +644,20 @@ private fun FolderGrid(
 }
 
 /**
- * 单个文件夹卡片：2x2 封面拼图 + 名称 + 数量角标。
+ * 单个文件夹卡片（§6 项目列表的移动端等价）：16:10 图 + 编号 + 标题 + 等宽元信息。
  *
- * v1.6.0 性能改动（滚动掉帧的第二半，第一半是 HomeViewModel 里缓存 folders 表格）：
- *  · 参数只有 [HomeFolderGrid]（值类型）+ 两个 lambda，封面与副标题都是预先算好的字符串，
- *    组合期不再调用 HomeFolders.coverUrls / 不再拼字符串 —— 滚动时零分配。
- *  · 封面走 [FadeInCover]，显式指定解码尺寸；旧实现用裸 AsyncImage 且无尺寸约束，
- *    Coil 会按原图分辨率解码上千像素的封面，一屏 6 张拼图就是几十 MB 位图，滚动时
- *    反复分配/回收触发 GC —— 这正是"一滑就卡一下"的来源。
- *  · 封面格子用 `aspectRatio(1f)` 固定高度，父级的测量阶段因此不需要在滚动中反复测量高度。
+ * 性能约束（v1.6.0 起保留）：
+ *  · 参数只有不可变值对象 [HomeFolderGrid] 与两个 lambda，组合期零计算、零字符串拼接；
+ *  · 封面走 [FadeInCover] 并显式给解码尺寸 —— 裸 AsyncImage 会按原图分辨率解码上千像素封面，
+ *    一屏 6 张拼图就是数十 MB 位图，快速滑动时反复分配/回收触发 GC（「一滑就卡一下」的根源）；
+ *  · 形状/颜色全部走单例常量，不在组合期新建；
+ *  · lambda 由调用方 remember（见 HomeScreen），保证 strong skipping 下卡片能真正跳过。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FolderCard(
     item: HomeFolderGrid,
+    index: Int,
     manageMode: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
@@ -590,134 +666,134 @@ private fun FolderCard(
     val folder = item.folder
     val canManage = folder.shareId != null
     val interaction = remember { MutableInteractionSource() }
-    // v1.6.0：形状/颜色/图标在组合期是全新对象，每次 recomposition 都重建会让
-    // 卡片永远无法跳过 —— 滚动时每张重生的卡片都在分配。用 remember 共享常量。
-    // v1.10.0（V5）：形状改用单例常量（等价但不再依赖 remember）。
-    val cardShape = DsoShapes.Surface
-    val badgeShape = DsoShapes.SmallSurface
-    val translucentBlack = remember { Color.Black.copy(alpha = 0.35f) }
-    val badgeRed = remember { DsoColors.AppRed.copy(alpha = 0.85f) }
+    val accent = MaterialTheme.colorScheme.primary
+    val showSelection = manageMode && canManage
     Column(
-        Modifier
-            .combinedClickable(
-                interactionSource = interaction,
-                indication = null,
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
-            .then(
-                if (manageMode && canManage) {
-                    Modifier.border(
-                        width = 2.dp,
-                        color = if (selected) DsoColors.AppRed else Color.Transparent,
-                        shape = cardShape
-                    )
-                } else Modifier
-            )
+        Modifier.combinedClickable(
+            interactionSource = interaction,
+            indication = null,
+            onClick = onClick,
+            onLongClick = onLongClick
+        )
     ) {
         Box(
             Modifier
                 .fillMaxWidth()
+                // §7 列表图统一 16:10；固定比例让滚动的测量阶段不必反复测高
                 .aspectRatio(1f)
-                .clip(cardShape)
+                .clip(if (folder.kind == HomeFolder.Kind.ARTIST) CircleShape else AwwShapes.Image)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
+                // v1.13.0：卡片描边宽度跟风格 —— Brutalist 是 2dp 黑框，其余风格不给卡片描边；
+                // 管理态选中无论如何都画强调色框（否则 Brutalist 下选不选看起来一样）。
+                .then(
+                    when {
+                        showSelection && selected -> Modifier.border(2.dp, accent, AwwShapes.Image)
+                        AwwShapes.borderWidth > 0.dp ->
+                            Modifier.border(AwwShapes.borderWidth, MaterialTheme.colorScheme.outline, AwwShapes.Image)
+                        else -> Modifier
+                    }
+                )
         ) {
             if (item.covers.isEmpty()) {
+                // §10 禁灰空块：无封面时用等宽编号占位，而不是一个纯灰方块
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = folderIcon(folder.kind), contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(44.dp)
-                    )
+                    Icon(if (folder.kind == HomeFolder.Kind.ARTIST) Icons.Filled.Person else Icons.Filled.LibraryMusic, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(32.dp))
                 }
             } else {
-                CoverCollage(item.covers)
+                // §5 动效②：封面 clip 揭示 + 轻微缩放入场。
+                //
+                // v1.14.0 性能修复（网格滚动卡顿）：入场动画只在这个卡片第一次出现时播一次。
+                // 之前是无条件 ClipReveal —— Lazy 网格回收条目后卡片重新组合，动画又从 0 开始，
+                // 于是滚动中不断有新卡片播 1200ms 动画（一屏最多 6 个 Animatable 并行逐帧写
+                // graphicsLayer），表现为滑动一顿一顿。
+                //
+                // revealOnce 用进程级 Set 记住已入场过的 folder id：首次进入主页有 stagger
+                // 揭示的观感，滑走再滑回来则直接是终态，一次动画都不播。
+                val shouldReveal = remember(item.id) { revealOnce(item.id) }
+                ClipReveal(
+                    delayMillis = if (shouldReveal) (index % 6) * AwwMotion.Stagger else 0,
+                    animate = shouldReveal
+                ) {
+                    CoverCollage(item.covers)
+                }
             }
-            if (manageMode && canManage) {
-                // 管理态：右上角勾选圆圈（长按/进入管理后即为可选项）
+            if (showSelection) {
+                // 管理态：右上角小方块（选中 = 强调色实心，未选 = 半透明底），不用圆形勾选
                 Box(
                     Modifier
                         .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .size(22.dp)
-                        .clip(CircleShape)
+                        .padding(AwwSpace.s2)
+                        .size(16.dp)
+                        // 未选中用当前风格的 ink 半透明，而不是写死 Color.Black ——
+                        // 浅色风格（shadcn light / brutal light）下写死黑色会和深色封面糊在一起。
                         .background(
-                            if (selected) DsoColors.AppRed else translucentBlack
+                            if (selected) accent else AwwColors.Ink.copy(alpha = 0.35f),
+                            AwwShapes.Square
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     if (selected) {
                         Icon(
-                            Icons.Filled.Check, contentDescription = null,
-                            tint = Color.White, modifier = Modifier.size(14.dp)
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            // 勾在强调色实心块上，必须用 onAccent（Material 深色/ shadcn 的强调色是浅色）
+                            tint = AwwColors.OnAccent,
+                            modifier = Modifier.size(11.dp)
                         )
                     }
                 }
             }
-            // 类型角标，让"分享歌单"和"专辑"一眼可分
-            Row(
-                Modifier
-                    .align(Alignment.TopStart)
-                    .padding(6.dp)
-                    .clip(badgeShape)
-                    .background(badgeRed)
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = folderIcon(folder.kind), contentDescription = null,
-                    tint = androidx.compose.ui.graphics.Color.White,
-                    modifier = Modifier.size(11.dp)
-                )
-                Spacer(Modifier.width(3.dp))
-                Text(folderKindLabel(folder.kind), style = DsoTextStyles.Badge, color = androidx.compose.ui.graphics.Color.White)
-            }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(AwwSpace.s2))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+
+            Text(
+                text = folder.title,
+                style = AwwTheme.type.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        // 元信息行：类型 · 数量（等宽 + tabular-nums，§3）
         Text(
-            folder.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1, overflow = TextOverflow.Ellipsis
+            item.subtitle,
+            style = AwwTheme.type.small,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Text(
-            item.subtitle, style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1, overflow = TextOverflow.Ellipsis
-        )
+        Spacer(Modifier.height(AwwSpace.s2))
     }
 }
-
 /**
  * 2x2 封面拼图；只有 1 张时铺满，2 张时左右分栏，3-4 张时 2x2。
  *
- * v1.6.0：这里传的 dpSize 只是**解码采样尺寸**（半屏宽卡片 ≈200dp，四分格 ≈100dp），
- * 实际布局由父容器的 aspectRatio(1f) + weight(1f)/fillMaxHeight 决定 ——
- * FadeInCover 不再强行 .size()，所以拼图四宫格会正确铺满整卡而不是缩成方块。
+ * dpSize 只是**解码采样尺寸**（半屏宽卡片 ≈200dp，四分格 ≈100dp），实际布局由父容器的
+ * aspectRatio + weight/fillMaxHeight 决定 —— FadeInCover 不再强行 .size()，所以四宫格会正确铺满。
  */
 @Composable
 private fun CoverCollage(covers: List<String>) {
-    when (covers.size) {
-        1 -> FadeInCover(
+    if (covers.size == 1) {
+        FadeInCover(
             model = covers[0], contentDescription = null,
             dpSize = 200, modifier = Modifier.fillMaxSize()
         )
-        else -> Column(Modifier.fillMaxSize()) {
-            Row(Modifier.weight(1f)) {
-                CollageCell(covers[0])
-                CollageCell(covers.getOrNull(1) ?: covers[0])
-            }
-            Row(Modifier.weight(1f)) {
-                CollageCell(covers.getOrNull(2) ?: covers[0])
-                CollageCell(covers.getOrNull(3) ?: covers.getOrNull(2) ?: covers[0])
-            }
+        return
+    }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.weight(1f)) {
+            CollageCell(covers[0])
+            CollageCell(covers.getOrNull(1) ?: covers[0])
+        }
+        // §10 禁「边框套边框」，拼图格之间不加间隙，靠图片本身分界
+        Row(Modifier.weight(1f)) {
+            CollageCell(covers.getOrNull(2) ?: covers[0])
+            CollageCell(covers.getOrNull(3) ?: covers.getOrNull(2) ?: covers[0])
         }
     }
 }
 
-/**
- * 拼图单元格。dpSize=100 对应卡片 200dp 宽时的四分之一，
- * 让 Coil 只解码到"显示所需"的像素（约 100x100），而不是封面原图。
- */
+/** 拼图单元格。dpSize=100 对应卡片 200dp 宽时的四分之一，让 Coil 只解码到显示所需像素。 */
 @Composable
 private fun androidx.compose.foundation.layout.RowScope.CollageCell(url: String) {
     FadeInCover(
@@ -738,39 +814,56 @@ private fun FolderDetail(
     onToggleSelect: (String) -> Unit,
     onPlayAll: () -> Unit
 ) {
+    val gutter = AwwSpace.gutter(LocalConfiguration.current.screenWidthDp)
     if (folder.songs.isEmpty()) {
         Column(Modifier.fillMaxSize()) {
-            EmptyBlock(
-                if (folder.missing > 0) folder.missing.toString() + " 首曲目尚未入库：在「分享导入」提交下载后自动出现"
-                else "此文件夹暂无曲目"
+            AwwEmpty(
+                index = "000",
+                title = if (folder.missing > 0) folder.missing.toString() + " 首未入库" else "暂无曲目",
+                hint = if (folder.missing > 0) {
+                    "在「导入」提交下载任务后，歌曲会自动出现在这里。"
+                } else {
+                    "这个文件夹里还没有可播放的曲目。"
+                }
             )
         }
         return
     }
     LazyColumn(Modifier.fillMaxSize()) {
         if (error != null) {
-            item(key = "error_banner", contentType = "error") { ErrorBanner("加载失败：" + error + "，下拉重试") }
+            item(key = "error_banner", contentType = "error") {
+                ErrorBanner("加载失败：" + error + "，下拉重试")
+            }
         }
-        // v1.6.0 payload 类型：列表里有 header/song/spacer 三种差异极大的条目。
-        // 特别是 SongListItem 带封面位图与可选 Checkbox，若与 header/footer 共用复用槽，
-        // 在"管理态切换"（trailing 由 null 变 Checkbox）时会发生整行重建。
+        // v1.6.0 payload 类型：header/song/spacer 三种条目差异极大，特别是 SongListItem 带
+        // 封面位图与可选 Checkbox，若与 header 共用复用槽，管理态切换时会发生整行重建。
         item(key = "play_all", contentType = "header") {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    buildFolderSubtitleText(folder), Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                TextButton(onClick = onPlayAll) {
-                    Icon(
-                        Icons.Filled.PlayArrow, contentDescription = null,
-                        tint = DsoColors.AppRed, modifier = Modifier.size(18.dp)
+            Column(Modifier.fillMaxWidth().padding(start = gutter, end = gutter, top = AwwSpace.s4)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AwwMono(
+                        buildFolderSubtitleText(folder),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
                     )
-                    Spacer(Modifier.width(2.dp))
-                    Text("播放全部", color = DsoColors.AppRed, style = MaterialTheme.typography.bodySmall)
+                    PressScale {
+                        Row(
+                            Modifier
+                                .clickable(onClick = onPlayAll)
+                                .padding(start = AwwSpace.s3, top = AwwSpace.s1, bottom = AwwSpace.s1),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Filled.PlayArrow, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(AwwSpace.s1))
+                            AwwLabel("播放全部", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                 }
+                Spacer(Modifier.height(AwwSpace.s2))
+                AwwRule()
             }
         }
         itemsIndexed(
@@ -787,17 +880,19 @@ private fun FolderDetail(
                         Checkbox(
                             checked = song.id in selected,
                             onCheckedChange = { onToggleSelect(song.id) },
-                            colors = CheckboxDefaults.colors(checkedColor = DsoColors.AppRed)
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary,
+                                uncheckedColor = MaterialTheme.colorScheme.outline
+                            )
                         )
                     }
                 } else null
             )
         }
-        item(key = "bottom_pad", contentType = "spacer") { Spacer(Modifier.height(90.dp)) }
+        item(key = "bottom_pad", contentType = "spacer") { Spacer(Modifier.height(AwwSpace.s24)) }
     }
 }
-
-/** 管理模式下方的全选 / 删除条。 */
+/** 管理模式下的全选 / 删除条（细线分隔，强调色只用在小标签与数字上）。 */
 @Composable
 private fun ManageBar(
     total: Int,
@@ -806,36 +901,39 @@ private fun ManageBar(
     onSelectAll: () -> Unit,
     onDelete: () -> Unit
 ) {
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-    Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 6.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Checkbox(
-            checked = selected > 0 && selected == total,
-            onCheckedChange = { onSelectAll() },
-            colors = CheckboxDefaults.colors(checkedColor = DsoColors.AppRed)
-        )
-        Text(
-            "全选", color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.clickable(onClick = onSelectAll)
-        )
-        Spacer(Modifier.weight(1f))
-        TextButton(onClick = onDelete, enabled = selected > 0 && !deleting) {
-            Text(
-                if (deleting) "删除中…" else "删除(" + selected + ")",
-                color = if (selected > 0 && !deleting) DsoColors.AppRed
-                else MaterialTheme.colorScheme.onSurfaceVariant
+    val gutter = AwwSpace.gutter(LocalConfiguration.current.screenWidthDp)
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+        AwwRule()
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = gutter, vertical = AwwSpace.s3),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = selected > 0 && selected == total,
+                onCheckedChange = { onSelectAll() },
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.primary,
+                    uncheckedColor = MaterialTheme.colorScheme.outline
+                )
+            )
+            Spacer(Modifier.width(AwwSpace.s1))
+            Box(Modifier.clickable(onClick = onSelectAll)) { AwwLabel("全选") }
+            Spacer(Modifier.weight(1f))
+            AwwMono(pad2(selected) + " / " + pad2(total), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(AwwSpace.s4))
+            MastheadAction(
+                if (deleting) "删除中" else "删除",
+                onDelete,
+                accent = selected > 0 && !deleting
             )
         }
     }
 }
 
 /**
- * v1.6.0 歌单管理条：删除（选中/全选后批量）与合并。
+ * 歌单管理条：删除（选中/全选后批量）与合并。
  *
- * 放在底栏而不是长按菜单里，是因为"合并歌单"必须先选中 ≥2 个再指定目标 —— 批量选择
+ * 放在底栏而不是长按菜单里，是因为「合并歌单」必须先选中 >=2 个再指定目标 —— 批量选择
  * 天然适合底栏；长按只是快捷进入管理态的入口。
  */
 @Composable
@@ -847,42 +945,30 @@ private fun PlaylistManageBar(
     onDeleteSelected: () -> Unit,
     onMerge: () -> Unit
 ) {
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 6.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            if (selected.isEmpty()) "长按或点击卡片选择歌单"
-            else "已选 " + selected.size + " / " + total,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(start = 8.dp)
-        )
-        Spacer(Modifier.weight(1f))
-        if (selected.size == 1) {
-            TextButton(onClick = { onDeleteOne(selected.first()) }, enabled = !busy) {
-                Text("删除", color = DsoColors.AppRed, style = MaterialTheme.typography.bodySmall)
+    val gutter = AwwSpace.gutter(LocalConfiguration.current.screenWidthDp)
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+        AwwRule()
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = gutter, vertical = AwwSpace.s3),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AwwMono(
+                if (selected.isEmpty()) "点击卡片选择"
+                else pad2(selected.size) + " / " + pad2(total),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.weight(1f))
+            if (selected.size == 1) {
+                MastheadAction("删除", { onDeleteOne(selected.first()) }, accent = !busy)
+                Spacer(Modifier.width(AwwSpace.s4))
             }
-        }
-        TextButton(onClick = onDeleteSelected, enabled = selected.isNotEmpty() && !busy) {
-            Text(
-                if (busy) "处理中…" else "删除(" + selected.size + ")",
-                color = if (selected.isNotEmpty() && !busy) DsoColors.AppRed
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
+            MastheadAction(
+                if (busy) "处理中" else "删除(" + selected.size + ")",
+                onDeleteSelected,
+                accent = selected.isNotEmpty() && !busy
             )
-        }
-        TextButton(onClick = onMerge, enabled = selected.size >= 2 && !busy) {
-            Text(
-                "合并",
-                color = if (selected.size >= 2 && !busy) DsoColors.AppRed
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
+            Spacer(Modifier.width(AwwSpace.s4))
+            MastheadAction("合并", onMerge, accent = selected.size >= 2 && !busy)
         }
     }
 }
@@ -890,9 +976,8 @@ private fun PlaylistManageBar(
 /**
  * 合并对话框：选目标歌单 + 显示将要并入的来源。
  *
- * 交互设计上的取舍：目标默认取"选中项里排在最前的一个"，来源是其余选中项 ——
- * 这样用户只要勾选 2 个以上歌单再点合并，默认行为就是"把后面几个并进第一个"，
- * 但目标可以在下拉里改成任意未选中的歌单（例如新建的空歌单收编几个旧歌单）。
+ * 交互取舍：目标默认取「选中项里排在最前的一个」，来源是其余选中项 —— 用户只要勾选 2 个以上
+ * 再点合并，默认行为就是「把后面几个并进第一个」；目标也可以改成任意歌单（例如用空歌单收编旧歌单）。
  */
 @Composable
 private fun MergeDialog(
@@ -909,44 +994,55 @@ private fun MergeDialog(
     val chosen = sources.filter { it in preselected }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("合并歌单") },
+        containerColor = MaterialTheme.colorScheme.background,
+        title = { Text("合并歌单", style = AwwTheme.type.h3) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    "把选中的歌单并入目标歌单，合并后来源歌单会被删除，曲库里的歌曲不受影响。",
-                    style = MaterialTheme.typography.labelMedium,
+                AwwMono(
+                    "合并后来源歌单会被删除，曲库里的歌曲不受影响。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(8.dp))
-                Text("目标歌单", style = MaterialTheme.typography.labelMedium, color = DsoColors.AppRed, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(AwwSpace.s4))
+                AwwLabel("目标歌单", color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(AwwSpace.s2))
                 folders.filter { it.shareId != null }.forEach { f ->
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .clickable { target = f.shareId }
-                            .padding(vertical = 6.dp),
+                            .padding(vertical = AwwSpace.s1),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
                             selected = f.shareId == target,
                             onClick = { target = f.shareId },
-                            colors = RadioButtonDefaults.colors(selectedColor = DsoColors.AppRed)
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.outline
+                            )
                         )
+                        Spacer(Modifier.width(AwwSpace.s2))
                         Text(
-                            f.title + "（" + f.songs.size + " 首）",
-                            style = MaterialTheme.typography.bodySmall,
+                            f.title,
+                            style = AwwTheme.type.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        AwwMono(
+                            pad2(f.songs.size),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    if (chosen.isEmpty()) "未选择要并入的来源（返回后勾选 ≥2 个歌单）"
-                    else "将并入 " + chosen.size + " 个歌单：" + folders.filter { it.shareId in chosen }
+                Spacer(Modifier.height(AwwSpace.s4))
+                AwwRule()
+                Spacer(Modifier.height(AwwSpace.s2))
+                AwwMono(
+                    if (chosen.isEmpty()) "未选择要并入的来源（返回后勾选 >=2 个歌单）"
+                    else "并入 " + chosen.size + " 个：" + folders.filter { it.shareId in chosen }
                         .joinToString("、") { it.title },
-                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -955,20 +1051,79 @@ private fun MergeDialog(
             TextButton(
                 onClick = { target?.let { onConfirm(it, chosen) } },
                 enabled = target != null && chosen.isNotEmpty() && !busy
-            ) { Text("合并", color = DsoColors.AppRed) }
+            ) {
+                AwwLabel("合并", color = if (target != null && chosen.isNotEmpty() && !busy) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                })
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = {
+            TextButton(onClick = onDismiss) { AwwLabel("取消") }
+        }
     )
 }
 
-private fun folderIcon(kind: HomeFolder.Kind) = when (kind) {
-    HomeFolder.Kind.SHARE -> Icons.Filled.Folder
-    HomeFolder.Kind.ALBUM -> Icons.Filled.Album
-    HomeFolder.Kind.UNCATEGORIZED -> Icons.Filled.MusicNote
+/**
+ * 通用确认对话框（§6）。
+ *
+ * 不用系统默认的彩色按钮组：标题走 h3、正文走等宽小字、确认按钮走强调色小标签，
+ * 与整站排版语言一致；容器底色用 background 而不是默认的 surface 色块。
+ */
+@Composable
+private fun AwwDialog(
+    title: String,
+    body: String,
+    confirmText: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.background,
+        title = { Text(title, style = AwwTheme.type.h3) },
+        text = {
+            Column {
+                Text(body, style = AwwTheme.type.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(AwwSpace.s4))
+                AwwRule()
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                AwwLabel(confirmText, color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { AwwLabel("取消") }
+        }
+    )
 }
+
+/** 三位补零（§3 数字一律 mono + tabular-nums，靠补零对齐）。 */
+private fun pad3(n: Int): String = n.toString().padStart(3, '0')
+
+/** 两位补零。 */
+private fun pad2(n: Int): String = n.toString().padStart(2, '0')
+
+/**
+ * 进程级记录「哪些卡片已经播过入场动画」。
+ *
+ * v1.14.0：Lazy 网格回收条目后卡片会重新组合，入场动画若跟着 remember 走就会反复重播，
+ * 滚动时不断有新卡片播 1200ms 动画 —— 这是滑动顿挫的直接来源之一。
+ * 用一个小的同步 Set 记住已入场过的 folder id，滑走再滑回来直接给终态。
+ *
+ * 数量上限：曲库/歌单是有限集合（当前 100 量级），一个 id 只存一次，内存可忽略。
+ */
+private val revealedFolders = java.util.Collections.synchronizedSet(HashSet<String>())
+
+/** 首次出现返回 true 并记账，之后恒 false。 */
+private fun revealOnce(id: String): Boolean = revealedFolders.add(id)
 
 private fun folderKindLabel(kind: HomeFolder.Kind) = when (kind) {
     HomeFolder.Kind.SHARE -> "歌单"
     HomeFolder.Kind.ALBUM -> "专辑"
+    HomeFolder.Kind.ARTIST -> "艺人"
     HomeFolder.Kind.UNCATEGORIZED -> "未分类"
 }
